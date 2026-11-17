@@ -475,12 +475,12 @@ Rules:
 
 ### 8.3 Pacman section
 
-Constraint: Aurelis is immutable. **Package changes go only through `pkg`, which stages them for the next reboot.** The GUI must make that unmistakable.
+Constraint: Aurelis is immutable. **Package changes go only through `pkg`, which stages them for the next reboot.** The GUI must make that unmistakable. Detailed manual for pkg docs/how-pkg-works.md
 
 - Browse/search (read only, no root): SQLite index from `pacman -Si` output (all repos), rebuilt when the sync database mtimes change (`/var/lib/pacman/sync/*.db`). Index name, version, description, repo, groups, sizes, URL, license, depends. FTS5 on name + description. Lazy detail via `pacman -Si <name>`.
 - Installed: `pacman -Qq` / `pacman -Qi`. `/usr/lib/aurelis/core-packages.json` (system, **locked**) and `/var/lib/aurelis/user-packages.json` (user-installed) classify them. Locked packages show a lock and cannot be removed. Dependencies of user packages appear only with "Show dependencies".
 - Updates: through `pkg` (9.2). Never run `pacman -Sy` from the GUI (partial upgrades).
-- Install/remove: `pkg` (9.2). After success the UI shows the **pending-reboot banner** and marks the package Pending. The banner persists across GUI restarts by asking `pkg` for pending changes, never from a GUI-owned file.
+- add/remove: `pkg` (9.2). After success the UI shows the **pending-reboot banner** and marks the package Pending. The banner persists across GUI restarts by asking `pkg` for pending changes, never from a GUI-owned file.
 - Dangerous removals: warn when removing a package that other user packages depend on (reverse deps from `pacman -Qi` "Required By").
 - Large lists: paginated model (6, 10.2), never the in-memory `App` list.
 
@@ -523,6 +523,37 @@ Known: it wraps pacman and add/remove take effect on next reboot. Needed by the 
 - a way to cancel a pending change,
 - whether it needs privileges (polkit/`pkexec`) and how the GUI should invoke it,
 - how updates are staged (is there `pkg update`? what does it list?).
+
+Answered by the user:
+
+Commands:
+
+pkg add PACKAGE... - Queue package installs (exit 0 on success, 1 on error)
+pkg remove PACKAGE... - Queue package removals (exit 0 on success, 1 on error)
+Machine-readable pending changes:
+
+RPC method: pkg.queue returns {"queue": {"install": [...], "remove": [...]}}
+Socket: 
+aurelis-pkgd.sock
+Cancel pending changes:
+
+All: pkg queue clear
+Single removal: pkg add PACKAGE (for installed packages)
+Single install: pkg remove PACKAGE (for queued packages)
+Privileges:
+
+No polkit/pkexec - user must be in wheel group
+GUI invokes directly as the user: /usr/bin/pkg add htop
+Daemon socket is 0660 root:wheel
+Updates:
+
+No pkg update command - Arch packages update by the system not the user or software center.
+pkg list shows installed user packages
+pkg queue shows pending operations
+pkg apply applies changes (normally automatic at boot)
+
+
+
 Phase 6 starts with a short adapter spec written with the owner.
 
 ---
