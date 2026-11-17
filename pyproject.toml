@@ -1,0 +1,37 @@
+[project]
+name = "aurelis-software"
+version = "0.1.0"
+description = "Aurelis Software Center — PyQt6 software center and wizards"
+requires-python = ">=3.11"
+dependencies = [
+    "PyQt6>=6.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-qt>=4.5",
+    "ruff>=0.9",
+]
+
+[build-system]
+requires = ["hatchling>=1.16"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+lint.select = ["E", "F", "I", "N", "UP", "B", "C4", "PLR", "PERF", "RUF", "SIM", "TRY", "DTZ", "G", "EM", "FLY", "ICN", "INT", "LOG", "PGH", "PIE", "PLW", "RET", "TID", "ASYNC", "BLE", "C"]
+lint.ignore = ["E501", "B008", "B018", "C408", "C409", "C419", "UP007", "UP035", "PLR0913", "PLR0915"]
+format.quote-style = "double"
+format.skip-magic-trailing-comma = false
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["PLR2004", "PLR0913"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "real_daemon: run against the installed appimage-launcher daemon (skipped unless installed)",
+]
+addopts = ["-q"]

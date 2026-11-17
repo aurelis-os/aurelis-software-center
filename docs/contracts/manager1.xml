@@ -1,0 +1,62 @@
+<!DOCTYPE node PUBLIC "-//freedesktop//DTD D-Bus Object Introspection 1.0//EN"
+ "http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd">
+<!--
+  docs/contracts/manager1.xml
+  Copy of the appimage-launcher Manager1 introspection XML.
+  The D-Bus service name is io.github.appimage_launcher.Manager (from launcher's constants.py).
+-->
+<node>
+  <interface name="io.github.appimage_launcher.Manager1">
+    <!-- Properties -->
+    <property name="APIVersion" type="u" access="read"/>
+    <property name="Capabilities" type="a{sb}" access="read"/>
+
+    <!-- Methods -->
+    <method name="List">
+      <arg name="options" type="a{sv}" direction="in"/>
+      <arg name="result" type="a(sssv)" direction="out"/>
+    </method>
+    <method name="Info">
+      <arg name="name" type="s" direction="in"/>
+      <arg name="result" type="a{sv}" direction="out"/>
+    </method>
+    <method name="Inspect">
+      <arg name="path" type="s" direction="in"/>
+      <arg name="result" type="a{sv}" direction="out"/>
+    </method>
+    <method name="Install">
+      <arg name="path" type="s" direction="in"/>
+      <arg name="options" type="a{sv}" direction="in"/>
+      <arg name="result" type="a{sv}" direction="out"/>
+    </method>
+    <method name="Remove">
+      <arg name="name" type="s" direction="in"/>
+      <arg name="options" type="a{sv}" direction="in"/>
+      <arg name="result" type="b" direction="out"/>
+    </method>
+    <method name="Revert">
+      <arg name="name" type="s" direction="in"/>
+      <arg name="result" type="b" direction="out"/>
+    </method>
+    <method name="SetPolicy">
+      <arg name="name" type="s" direction="in"/>
+      <arg name="policy" type="s" direction="in"/>
+      <arg name="result" type="b" direction="out"/>
+    </method>
+    <method name="SetOrigin">
+      <arg name="name" type="s" direction="in"/>
+      <arg name="origin" type="s" direction="in"/>
+      <arg name="result" type="b" direction="out"/>
+    </method>
+    <method name="Reindex">
+      <arg name="result" type="b" direction="out"/>
+    </method>
+
+    <!-- Signals -->
+    <signal name="AppsChanged">
+      <arg name="kind" type="s"/>
+      <arg name="app_id" type="s"/>
+      <arg name="source" type="s"/>
+    </signal>
+  </interface>
+</node>

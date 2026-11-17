@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export QT_QPA_PLATFORM=offscreen
+
+echo "==> ruff check"
+ruff check src tests
+
+echo "==> ruff format --check"
+ruff format --check src tests
+
+echo "==> pytest"
+pytest "$@"
+
+echo "==> check passed"
