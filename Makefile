@@ -1,4 +1,4 @@
-.PHONY: test lint format check clean fixtures screenshots install-dev pre-commit
+.PHONY: test lint format check clean screenshots install-dev pre-commit
 
 # Run all checks (lint + format + test)
 check: lint format test
@@ -30,10 +30,6 @@ clean:
 	rm -rf tests/__pycache__
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete
-
-# Regenerate test fixtures (evil-icons.tar.gz, apps.edge.db)
-fixtures:
-	python3 tools/regenerate_fixtures.py
 
 # Run screenshots generation
 screenshots:

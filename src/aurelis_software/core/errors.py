@@ -98,6 +98,16 @@ class ConflictPendingError(AurelisError):
         super().__init__(message or "A conflicting operation is pending", details=str(payload))
 
 
+class InvalidAppImageError(AurelisError):
+    code = "invalid-appimage"
+    user_message = "The AppImage file is invalid or corrupt."
+
+
+class NotFoundError(AurelisError):
+    code = "not-found"
+    user_message = "The requested resource was not found."
+
+
 class BusyError(AurelisError):
     code = "busy"
     user_message = "The service is busy; please try again."
@@ -123,12 +133,14 @@ ApiTooOld = ApiTooOldError
 ToolFailed = ToolFailedError
 Cancelled = CancelledError
 Incompatible = IncompatibleError
+InvalidAppImage = InvalidAppImageError
 Locked = LockedError
+NetworkError = NetworkErrorError
+NotFound = NotFoundError
 PendingReboot = PendingRebootError
 ConflictPending = ConflictPendingError
 Busy = BusyError
 CatalogSchemaTooNew = CatalogSchemaTooNewError
-NetworkError = NetworkErrorError
 
 __all__ = [
     "ApiTooOld",
@@ -141,8 +153,10 @@ __all__ = [
     "DaemonUnavailable",
     "DiskFull",
     "Incompatible",
+    "InvalidAppImage",
     "Locked",
     "NetworkError",
+    "NotFound",
     "PendingReboot",
     "PermissionDenied",
     "ToolFailed",

@@ -21,7 +21,7 @@ def _palette() -> QColor:
 def badge_color(kind: str) -> QColor:
     """Return a semantic badge color for the current palette.
 
-    Kinds: installed, update, proprietary, incompatible, linked, neutral.
+    Kinds: installed, update, proprietary, incompatible, linked, neutral, success, warning.
     """
     pal = _palette()
     base = pal.color(pal.ColorRole.Window)
@@ -33,6 +33,8 @@ def badge_color(kind: str) -> QColor:
         "incompatible": ("#b71c1c", "#ef9a9a"),
         "linked": ("#6a1b9a", "#ce93d8"),
         "neutral": ("#546e7a", "#90a4ae"),
+        "success": ("#2e7d32", "#69f0ae"),
+        "warning": ("#b26a00", "#ffb74d"),
     }
     dark, light = table[kind]
     return QColor(light if is_light else dark)

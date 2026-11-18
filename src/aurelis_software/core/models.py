@@ -34,7 +34,7 @@ class App:  # a catalog / index entry
         return self.raw.get(k, default)
 
 
-@dataclass(slots=True)
+@dataclass
 class InstalledApp:  # something present on this system
     id: str  # AppImage: the launcher's app_id; others: their ids
     source: Source
@@ -50,6 +50,8 @@ class InstalledApp:  # something present on this system
     locked: bool = False  # system package, cannot be removed
     pending: str | None = None  # "install" | "remove" | None (pacman via pkg)
     previous: tuple[dict, ...] = ()  # AppImage: revertible versions
+    update_available: bool = False  # newer version available in catalog
+    suggest_link: dict | None = None  # suggested catalog link for unmanaged apps
 
 
 @dataclass(slots=True)

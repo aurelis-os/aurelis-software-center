@@ -31,3 +31,19 @@
 **Alternative considered**: Renaming methods and using Qt's `@pyqtSlot` / `@pyqtProperty` decorators with explicit names. Rejected because it adds boilerplate and doesn't work for virtual method overrides like `closeEvent` or `rowCount`.
 
 **Review**: This decision should be revisited if a future version of PyQt6 provides a first-class way to register Python-style names for Qt virtual methods.
+
+## Acceptance requires a run on real Aurelis
+
+**Decision**: Phase 3 acceptance (and all subsequent phases) requires a run on real Aurelis, not only on the dev Arch machine.
+
+**What the dev environment cannot prove:**
+- The `appimage-launcher` daemon is not installed on the dev machine; the `real_daemon` marker tests (`-m real_daemon`) cannot run here.
+- The dev machine is not immutable; `~/Applications` may not exist or may not be on the expected filesystem.
+- `pkg` is not installed on the dev machine; Phase 6 cannot be fully validated here.
+- KDE Plasma 6 / Dolphin integration (double-click MIME handler, service menu) cannot be tested without the real desktop.
+- `appimage run <name>` is not available; the Open action cannot be exercised.
+- xattr support on `~/Applications` is unverified on the dev machine.
+- systemd user units and D-Bus activation via `.service` files behave differently on Aurelis.
+- The `pkg` daemon socket (`aurelis-pkgd.sock`) is not present on the dev machine.
+
+**Implication for the spec**: P3.10 must pass on real Aurelis, not only on the dev Arch. This note is added to the Phase 3 acceptance criteria in `docs/aurelis-software-gui-spec.md`.

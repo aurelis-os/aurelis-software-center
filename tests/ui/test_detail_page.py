@@ -44,9 +44,9 @@ def test_detail_page_full_app_renders(qtbot):
     page = DetailPage(icons_dir=None)
     qtbot.addWidget(page)
     page.set_app(_full_app())
-    # Primary action present but disabled in Phase 2, with a tooltip.
-    assert page._action_button.isEnabled() is False
-    assert page._action_button.toolTip() != ""
+    # Primary action present and enabled for NotInstalled (Phase 3)
+    assert page._action_button.isEnabled() is True
+    assert page._action_button.text() == "Install"
     assert page.install_requested is not None
 
 
@@ -55,7 +55,8 @@ def test_detail_page_empty_app_renders(qtbot):
     page = DetailPage(icons_dir=None)
     qtbot.addWidget(page)
     page.set_app(_empty_app())
-    assert page._action_button.isEnabled() is False
+    assert page._action_button.isEnabled() is True
+    assert page._action_button.text() == "Install"
 
 
 def test_detail_page_clear_shows_empty(qtbot):

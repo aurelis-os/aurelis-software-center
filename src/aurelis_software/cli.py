@@ -47,6 +47,16 @@ def _parser() -> argparse.ArgumentParser:
 
     sub.add_parser("selftest", help="exercise the service and backend modules")
 
+    sub.add_parser(
+        "dbus-ping",
+        help="ping the appimage-launcher daemon (requires running daemon)",
+    )
+
+    sub.add_parser(
+        "list-installed",
+        help="list installed AppImages via the daemon (requires running daemon)",
+    )
+
     return parser
 
 
@@ -115,7 +125,7 @@ def _selftest() -> int:
     """Exercise the service/backend modules end to end (reachability check)."""
     from aurelis_software.backends.base import OperationState
     from aurelis_software.backends.fake import FakeBackend
-    from aurelis_software.core.matching import build_origin, match_installed
+    from aurelis_software.core.matching import build_origin, match_installed_to_catalog
     from aurelis_software.core.models import App, InstalledApp, Source
     from aurelis_software.core.versions import update_available
     from aurelis_software.services.operations import OperationQueue
@@ -150,8 +160,9 @@ def _selftest() -> int:
     )
     assert update_available(entry, inst) is True
 
-    linked = match_installed(inst, {"org.kde.kate": entry}, {})
-    assert linked.kind == "linked"
+    linked = match_installed_to_catalog(inst, [entry])
+    assert linked.kind == "origin"
+    assert linked.catalog_app is entry
 
     inst2 = InstalledApp(
         id="org.kde.kate",
@@ -159,10 +170,9 @@ def _selftest() -> int:
         name="Kate",
         sha256="new",
     )
-    auto_link = match_installed(inst2, {"org.kde.kate": entry}, {"new": entry})
-    assert auto_link.kind == "auto_link"
-    assert auto_link.origin is not None
-    assert auto_link.origin["catalog_id"] == "org.kde.kate"
+    auto_link = match_installed_to_catalog(inst2, [entry], file_sha256="new")
+    assert auto_link.kind == "sha256"
+    assert auto_link.catalog_app is entry
 
     origin = build_origin(entry)
     assert origin["catalog_id"] == "org.kde.kate"
@@ -172,22 +182,121 @@ def _selftest() -> int:
     return 0
 
 
+def _dbus_ping() -> int:
+    """Ping the appimage-launcher daemon: read APIVersion and Capabilities."""
+    import sys
+
+    from PyQt6.QtCore import QCoreApplication, QEventLoop, QTimer
+    from PyQt6.QtDBus import QDBusConnection
+
+    from aurelis_software.backends.appimage import AppImageBackend
+    from aurelis_software.services.qt_dbus import DbusClient
+
+    QCoreApplication.instance() or QCoreApplication(sys.argv[:1])
+    bus = QDBusConnection.sessionBus()
+    if not bus.isConnected():
+        print("session bus not connected", file=sys.stderr)
+        return 1
+    client = DbusClient(bus)
+    backend = AppImageBackend(client)
+    results: list = []
+    errors: list = []
+    loop = QEventLoop()
+
+    def _ok(version, caps):
+        results.append((version, caps))
+        loop.quit()
+
+    def _fail(err):
+        errors.append(err)
+        loop.quit()
+
+    backend.check_availability(ok_cb=_ok, fail_cb=_fail)
+    QTimer.singleShot(5000, loop.quit)
+    loop.exec()
+
+    if errors:
+        print(f"daemon unavailable: {errors[0]}", file=sys.stderr)
+        return 1
+    if not results:
+        print("timeout waiting for daemon", file=sys.stderr)
+        return 1
+    version, caps = results[0]
+    print(f"APIVersion: {version}")
+    print(f"Capabilities: {', '.join(sorted(caps))}")
+    return 0
+
+
+_MIN_INSTALLED_ENTRY_LEN = 3  # (app_id, name, version)
+
+
+def _list_installed() -> int:
+    """List installed AppImages via the daemon."""
+    import sys
+
+    from PyQt6.QtCore import QCoreApplication, QEventLoop, QTimer
+    from PyQt6.QtDBus import QDBusConnection
+
+    from aurelis_software.backends.appimage import AppImageBackend
+    from aurelis_software.services.qt_dbus import DbusClient
+
+    QCoreApplication.instance() or QCoreApplication(sys.argv[:1])
+    bus = QDBusConnection.sessionBus()
+    if not bus.isConnected():
+        print("session bus not connected", file=sys.stderr)
+        return 1
+    client = DbusClient(bus)
+    backend = AppImageBackend(client)
+    results: list = []
+    errors: list = []
+    loop = QEventLoop()
+
+    backend.list_installed_async(
+        {"all": True},
+        reply_cb=lambda apps: (results.append(apps), loop.quit()),
+        error_cb=lambda e: (errors.append(e), loop.quit()),
+    )
+    QTimer.singleShot(5000, loop.quit)
+    loop.exec()
+
+    if errors:
+        print(f"error: {errors[0]}", file=sys.stderr)
+        return 1
+    if not results:
+        print("timeout", file=sys.stderr)
+        return 1
+    apps = results[0]
+    if not apps:
+        print("(no installed AppImages)")
+        return 0
+    for entry in apps:
+        # entry is a tuple/list: (app_id, name, version, ...)
+        if isinstance(entry, (list, tuple)) and len(entry) >= _MIN_INSTALLED_ENTRY_LEN:
+            print(f"{entry[0]}\t{entry[1]}\t{entry[2]}")
+        else:
+            print(entry)
+    return 0
+
+
 def main(argv=None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
     paths = Paths.xdg()
     config = load(paths)
+    _dispatch = {
+        "search": lambda: _search(args, paths),
+        "show": lambda: _show(args, paths),
+        "selftest": _selftest,
+        "dbus-ping": _dbus_ping,
+        "list-installed": _list_installed,
+    }
     if args.command == "catalog":
         if args.action == "list":
             return _catalog_list(args, paths)
-        if args.action == "refresh":
-            return _catalog_refresh(args, paths, config)
-    if args.command == "search":
-        return _search(args, paths)
-    if args.command == "show":
-        return _show(args, paths)
-    if args.command == "selftest":
-        return _selftest()
+        return _catalog_refresh(args, paths, config)
+    fn = _dispatch.get(args.command)
+    if fn is not None:
+        return fn()
     parser.error("unknown command")
     return 2
 

@@ -704,7 +704,7 @@ Prerequisite for the final acceptance: the launcher's API v1 (Phase 3B, tag `api
 - [ ] P3.9 Failure-injection tests with the fake: download fails at 50%, checksum mismatch, `ConflictPending` then each decision, `Busy` retry, daemon vanishes mid-call, disk full. Each shows the right message and leaves no files in the cache.
 - [ ] P3.10 Real-daemon integration run (marker `real_daemon`) once the launcher is tagged `api-v1`: the same scenarios against the installed daemon.
 
-Acceptance: with the fake, install, remove, conflict resolution, cancel (before handoff) and retry work end to end; no `.part` or stray files after any failure; with the real daemon the integration suite passes; dropping or deleting a file in a test `~/Applications` is reflected in the GUI within 1 s.
+Acceptance: with the fake, install, remove, conflict resolution, cancel (before handoff) and retry work end to end; no `.part` or stray files after any failure; with the real daemon the integration suite passes; dropping or deleting a file in a test `~/Applications` is reflected in the GUI within 1 s. P3.10 must pass on real Aurelis, not only on the dev Arch.
 
 ### Phase 4: AppImage updates
 

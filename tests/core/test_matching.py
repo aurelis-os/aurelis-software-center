@@ -1,18 +1,19 @@
-"""Tests for core/matching.py (section 4.6) - table-driven over every rule."""
+"""Tests for core/matching.py (P3.8)."""
 
 from __future__ import annotations
 
-import pytest
-
-from aurelis_software.core.matching import build_origin, match_installed
+from aurelis_software.core.matching import MatchKind, match_installed_to_catalog
 from aurelis_software.core.models import App, InstalledApp, Source
 
 
-def _entry(app_id: str, version: str | None = None, sha256: str | None = None, **raw) -> App:
-    raw = dict(raw)
-    if version is not None:
-        raw["version"] = version
+def _catalog_app(
+    app_id: str, sha256: str | None = None, raw_data: dict | None = None, **raw
+) -> App:
+    """Create a catalog App for testing."""
+    if raw_data is not None:
+        raw = dict(raw_data)
     if sha256 is not None:
+        raw = dict(raw)
         raw["sha256"] = sha256
     return App(
         key=f"appimage:{app_id}",
@@ -20,105 +21,283 @@ def _entry(app_id: str, version: str | None = None, sha256: str | None = None, *
         source=Source.APPIMAGE,
         name=app_id,
         summary="",
-        version=version,
+        version="1.0",
         raw=raw,
     )
 
 
-def _inst(
-    *,
-    id: str = "org.example.app",
-    sha256: str | None = None,
+def _installed_app(
+    app_id: str,
     origin: dict | None = None,
+    sha256: str | None = None,
+    **kwargs,
 ) -> InstalledApp:
-    return InstalledApp(id=id, source=Source.APPIMAGE, name="App", sha256=sha256, origin=origin)
-
-
-CATALOG = {
-    _entry("org.example.a").id: _entry("org.example.a", sha256="sha-a"),
-    _entry("org.example.b").id: _entry("org.example.b"),
-}
-
-
-@pytest.mark.parametrize(
-    "installed,expected_kind",
-    [
-        # Rule 1: origin.catalog_id present -> linked
-        (_inst(id="anything", origin={"catalog_id": "org.example.a"}), "linked"),
-        # Rule 2: installed sha256 equals catalog entry sha256 -> auto-link
-        (_inst(id="unrelated", sha256="sha-a"), "auto_link"),
-        # Rule 3: app_id equal, no hash match -> suggest
-        (_inst(id="org.example.a", sha256="other"), "suggest"),
-        # Rule 4: neither -> unmanaged
-        (_inst(id="org.example.unknown", sha256="nope"), "unmanaged"),
-        # Rule 4: nothing at all -> unmanaged
-        (_inst(id="org.example.unknown"), "unmanaged"),
-        # Rule 1 wins over rule 2 when both hold
-        (
-            _inst(id="org.example.a", sha256="sha-a", origin={"catalog_id": "org.example.a"}),
-            "linked",
-        ),
-        # Rule 1: origin.catalog_id set but the catalog entry is gone -> linked, no entry
-        (_inst(id="anything", origin={"catalog_id": "org.example.gone"}), "linked"),
-    ],
-)
-def test_match_installed_rules(installed, expected_kind):
-    entries_by_sha256 = {entry.raw.get("sha256"): entry for entry in CATALOG.values()}
-    result = match_installed(installed, CATALOG, entries_by_sha256)
-    assert result.kind == expected_kind
-
-
-def test_auto_link_builds_origin_without_nulls():
-    entry = _entry("org.example.a", sha256="sha-a")
-    entry.raw["version_changed_at"] = "2026-01-01T00:00:00Z"
-    result = match_installed(_inst(sha256="sha-a"), {"org.example.a": entry}, {"sha-a": entry})
-    assert result.kind == "auto_link"
-    assert result.origin == {
-        "source": "aurelis-catalog",
-        "catalog_id": "org.example.a",
-        "sha256": "sha-a",
-        "changed_at": "2026-01-01T00:00:00Z",
+    """Create an InstalledApp for testing."""
+    defaults = {
+        "id": app_id,
+        "source": Source.APPIMAGE,
+        "name": app_id,
+        "version": "1.0",
+        "managed_name": app_id,
+        "path": f"/home/user/Applications/{app_id}.AppImage",
+        "role": "primary",
+        "sha256": sha256,
+        "update_policy": "auto",
+        "self_managed": False,
+        "origin": origin,
+        "locked": False,
+        "pending": None,
+        "previous": (),
     }
+    defaults.update(kwargs)
+    return InstalledApp(**defaults)
 
 
-def test_build_origin_omits_null_values():
-    entry = _entry("org.example.a", sha256=None)
-    assert build_origin(entry) == {
-        "source": "aurelis-catalog",
-        "catalog_id": "org.example.a",
-    }
+# ---------------------------------------------------------------------------
+# Rule 1: origin match
+# ---------------------------------------------------------------------------
+def test_match_by_origin():
+    """Origin match takes precedence (highest confidence)."""
+    catalog = [_catalog_app("org.kde.kate", sha256="aaa")]
+    installed = _installed_app("different-id", origin={"catalog_id": "org.kde.kate"})
+
+    match = match_installed_to_catalog(installed, catalog)
+
+    assert match.kind == MatchKind.ORIGIN
+    assert match.confidence == 1.0
+    assert match.catalog_app.id == "org.kde.kate"
 
 
-def test_suggest_returns_no_origin_until_confirmed():
-    entry = _entry("org.example.a", sha256="sha-a")
-    result = match_installed(
-        _inst(id="org.example.a", sha256="other"),
-        {"org.example.a": entry},
-        {},
+def test_match_by_origin_over_sha256():
+    """Origin beats sha256 even if sha256 matches a different app."""
+    catalog = [
+        _catalog_app("org.kde.kate", sha256="aaa"),
+        _catalog_app("org.gimp.gimp", sha256="bbb"),
+    ]
+    # Installed has origin pointing to kate, but file sha256 matches gimp
+    installed = _installed_app("some-id", origin={"catalog_id": "org.kde.kate"}, sha256="bbb")
+
+    match = match_installed_to_catalog(installed, catalog, file_sha256="bbb")
+
+    assert match.kind == MatchKind.ORIGIN
+    assert match.catalog_app.id == "org.kde.kate"
+
+
+# ---------------------------------------------------------------------------
+# Rule 2: sha256 match
+# ---------------------------------------------------------------------------
+def test_match_by_sha256():
+    """File sha256 matches catalog entry."""
+    catalog = [_catalog_app("org.kde.kate", sha256="aaa")]
+    installed = _installed_app("org.kde.kate", sha256="aaa")
+
+    match = match_installed_to_catalog(installed, catalog, file_sha256="aaa")
+
+    assert match.kind == MatchKind.SHA256
+    assert match.confidence == 0.95
+    assert match.catalog_app.id == "org.kde.kate"
+
+
+def test_sha256_case_insensitive():
+    """SHA256 comparison is case-insensitive."""
+    catalog = [_catalog_app("org.kde.kate", sha256="AAA")]
+    installed = _installed_app("org.kde.kate", sha256="aaa")
+
+    match = match_installed_to_catalog(installed, catalog, file_sha256="AAA")
+
+    assert match.kind == MatchKind.SHA256
+
+
+def test_sha256_no_match_falls_through():
+    """SHA256 mismatch falls through to app_id match."""
+    catalog = [_catalog_app("org.kde.kate", sha256="aaa")]
+    installed = _installed_app("org.kde.kate", sha256="bbb")
+
+    match = match_installed_to_catalog(installed, catalog, file_sha256="bbb")
+
+    assert match.kind == MatchKind.APP_ID
+
+
+# ---------------------------------------------------------------------------
+# Rule 3: app_id match
+# ---------------------------------------------------------------------------
+def test_match_by_app_id_exact():
+    """Exact app_id match in catalog."""
+    catalog = [_catalog_app("org.kde.kate")]
+    installed = _installed_app("org.kde.kate")
+
+    match = match_installed_to_catalog(installed, catalog)
+
+    assert match.kind == MatchKind.APP_ID
+    assert match.confidence == 0.9
+
+
+def test_match_by_desktop_entry_id():
+    """Match by desktop-entry/appstream id."""
+    catalog = [_catalog_app("org.kde.kate", raw_data={"desktop_entry_id": "kate.desktop"})]
+    installed = _installed_app("kate.desktop")
+
+    match = match_installed_to_catalog(installed, catalog)
+
+    assert match.kind == MatchKind.APP_ID
+    assert match.confidence == 0.85
+
+
+def test_app_id_case_insensitive():
+    """App ID comparison is case-insensitive."""
+    catalog = [_catalog_app("ORG.KDE.KATE")]
+    installed = _installed_app("org.kde.kate")
+
+    match = match_installed_to_catalog(installed, catalog)
+
+    assert match.kind == MatchKind.APP_ID
+
+
+# ---------------------------------------------------------------------------
+# Rule 4: unmanaged
+# ---------------------------------------------------------------------------
+def test_no_match_returns_unmanaged():
+    """No match returns unmanaged."""
+    catalog = [_catalog_app("org.kde.kate")]
+    installed = _installed_app("org.unknown.app")
+
+    match = match_installed_to_catalog(installed, catalog)
+
+    assert match.kind == MatchKind.UNMANAGED
+    assert match.confidence == 0.0
+    assert match.catalog_app is None
+
+
+def test_unmanaged_origin_none():
+    """No origin and no other match -> unmanaged."""
+    catalog = [_catalog_app("org.kde.kate")]
+    installed = _installed_app("org.unknown.app", origin=None)
+
+    match = match_installed_to_catalog(installed, catalog)
+
+    assert match.kind == MatchKind.UNMANAGED
+
+
+# ---------------------------------------------------------------------------
+# Ambiguous match
+# ---------------------------------------------------------------------------
+def test_ambiguous_when_two_catalog_apps_same_id():
+    """Two catalog apps with same app_id -> ambiguous."""
+    catalog = [
+        _catalog_app("org.kde.kate", raw_data={"name": "Kate"}),
+        _catalog_app("org.kde.kate", raw_data={"name": "Kate Beta"}),
+    ]
+    installed = _installed_app("org.kde.kate")
+
+    match = match_installed_to_catalog(installed, catalog)
+
+    assert match.kind == MatchKind.AMBIGUOUS
+    assert match.catalog_app is None
+
+
+# ---------------------------------------------------------------------------
+# Rule precedence
+# ---------------------------------------------------------------------------
+def test_precedence_origin_beats_sha256_beats_app_id():
+    """Origin > sha256 > app_id precedence."""
+    catalog = [
+        _catalog_app("org.kde.kate", sha256="aaa"),
+        _catalog_app("org.gimp.gimp", sha256="bbb"),
+    ]
+    # Origin points to kate, file sha256 matches gimp, installed_id is gimp
+    installed = _installed_app(
+        "org.gimp.gimp",
+        origin={"catalog_id": "org.kde.kate"},
+        sha256="bbb",
     )
-    assert result.kind == "suggest"
-    assert result.entry is entry
-    assert result.origin is None
+
+    match = match_installed_to_catalog(installed, catalog, file_sha256="bbb")
+
+    assert match.kind == MatchKind.ORIGIN
+    assert match.catalog_app.id == "org.kde.kate"
 
 
-def test_linked_returns_entry_without_origin_call():
-    entry = _entry("org.example.a", sha256="sha-a")
-    result = match_installed(
-        _inst(origin={"catalog_id": "org.example.a"}),
-        {"org.example.a": entry},
-        {"sha-a": entry},
+def test_sha256_beats_app_id():
+    """SHA256 beats app_id when origin not available."""
+    catalog = [
+        _catalog_app("org.kde.kate", sha256="aaa"),
+        _catalog_app("org.gimp.gimp", sha256="bbb"),
+    ]
+    # No origin, file sha256 matches kate, but installed_id is gimp
+    installed = _installed_app("org.gimp.gimp", sha256="aaa")
+
+    match = match_installed_to_catalog(installed, catalog, file_sha256="aaa")
+
+    assert match.kind == MatchKind.SHA256
+    assert match.catalog_app.id == "org.kde.kate"
+
+
+# ---------------------------------------------------------------------------
+# Hash matches but different origin stored
+# ---------------------------------------------------------------------------
+def test_hash_matches_but_different_origin_origin_wins():
+    """Hash matches catalog app A, but origin points to B -> origin wins."""
+    catalog = [
+        _catalog_app("org.kde.kate", sha256="aaa"),
+        _catalog_app("org.gimp.gimp", sha256="bbb"),
+    ]
+    # File sha256 matches gimp, but origin says kate
+    installed = _installed_app(
+        "some-id",
+        origin={"catalog_id": "org.kde.kate"},
+        sha256="bbb",
     )
-    assert result.kind == "linked"
-    assert result.entry is entry
-    assert result.origin is None
+
+    match = match_installed_to_catalog(installed, catalog, file_sha256="bbb")
+
+    assert match.kind == MatchKind.ORIGIN
+    assert match.catalog_app.id == "org.kde.kate"
+    assert match.confidence == 1.0
 
 
-def test_linked_when_catalog_entry_gone_has_none_entry():
-    result = match_installed(
-        _inst(origin={"catalog_id": "org.example.gone"}),
-        CATALOG,
-        {},
-    )
-    assert result.kind == "linked"
-    assert result.entry is None
-    assert result.origin is None
+# ---------------------------------------------------------------------------
+# Empty catalog
+# ---------------------------------------------------------------------------
+def test_empty_catalog_returns_unmanaged():
+    """Empty catalog returns unmanaged."""
+    installed = _installed_app("org.kde.kate")
+
+    match = match_installed_to_catalog(installed, [])
+
+    assert match.kind == MatchKind.UNMANAGED
+
+
+# ---------------------------------------------------------------------------
+# Match bool behavior
+# ---------------------------------------------------------------------------
+def test_match_bool_true_for_matched():
+    """Match is truthy when matched."""
+    catalog = [_catalog_app("org.kde.kate")]
+    installed = _installed_app("org.kde.kate")
+
+    match = match_installed_to_catalog(installed, catalog)
+
+    assert bool(match) is True
+
+
+def test_match_bool_false_for_unmanaged():
+    """Match is falsy when unmanaged."""
+    catalog = [_catalog_app("org.kde.kate")]
+    installed = _installed_app("org.unknown.app")
+
+    match = match_installed_to_catalog(installed, catalog)
+
+    assert bool(match) is False
+
+
+def test_match_bool_false_for_ambiguous():
+    """Match is falsy when ambiguous."""
+    catalog = [
+        _catalog_app("org.kde.kate"),
+        _catalog_app("org.kde.kate"),
+    ]
+    installed = _installed_app("org.kde.kate")
+
+    match = match_installed_to_catalog(installed, catalog)
+
+    assert bool(match) is False

@@ -69,8 +69,10 @@ def _draw_shadow(painter: QPainter, rect: QRect, radius: int, blur: int) -> None
         painter.drawPath(path)
 
 
-def _chip_list(source, categories: tuple, version) -> list[tuple[str, str]]:
-    """Order: source, version (protected from elision), then categories."""
+def _chip_list(
+    source, categories: tuple, version, update_available: bool = False, unmanaged: bool = False
+) -> list[tuple[str, str]]:
+    """Order: source, version (protected from elision), then categories, then status badges."""
     chips: list[tuple[str, str]] = []
     if source is not None:
         chips.append((str(source), "source"))
@@ -78,6 +80,11 @@ def _chip_list(source, categories: tuple, version) -> list[tuple[str, str]]:
         chips.append((str(version), "version"))
     if isinstance(categories, (list, tuple)):
         chips.extend((str(c), "neutral") for c in categories)
+    # Status badges: update_available and unmanaged go at the end
+    if update_available:
+        chips.append(("Update available", "update"))
+    if unmanaged:
+        chips.append(("Unmanaged", "warning"))
     return chips
 
 
@@ -251,9 +258,15 @@ class AppCardDelegate(QAbstractItemDelegate):
         chip_font.setWeight(QFont.Weight.Medium)
         painter.setFont(chip_font)
 
+        # Read update_available and unmanaged from raw data
+        update_available = raw.get("update_available", False)
+        unmanaged = raw.get("unmanaged", False)
+
         row1_y = rect.bottom() - 2 * CHIP_H - _CHIP_SPACING - 10
         row1, row2 = layout_chips(
-            _chip_list(source, categories, version), painter.fontMetrics(), inner_w
+            _chip_list(source, categories, version, update_available, unmanaged),
+            painter.fontMetrics(),
+            inner_w,
         )
         ctx = _ChipPaintContext(
             painter, rect.x() + pad, row1_y, row1_y + CHIP_H + _CHIP_SPACING, selected
@@ -295,10 +308,11 @@ class AppCardDelegate(QAbstractItemDelegate):
     def _chip_color(self, kind: str, selected: bool) -> QColor:
         if selected:
             return QColor(255, 255, 255, 55)
-        if kind == "source":
-            return badge_color("update")
-        if kind == "version":
-            return badge_color("installed")
-        if kind == "license":
-            return badge_color("proprietary")
-        return badge_color("neutral")
+        color_map = {
+            "source": "update",
+            "version": "installed",
+            "license": "proprietary",
+            "update": "success",
+            "warning": "warning",
+        }
+        return badge_color(color_map.get(kind, "neutral"))
