@@ -266,3 +266,52 @@ def test_license_classification_chip_kind(qtbot):
         assert chip.width() < page.width() // 2, (
             f"Chip width {chip.width()} should not be full-width for {license_val}"
         )
+
+
+def test_apps_changed_update_available_after_install(qtbot):
+    """After a successful install, set_app with update_available=True must move to UpdateAvailable.
+
+    This verifies the terminal-state hack is gone: the state must be derived
+    from the installed record, not frozen at 'Installed'.
+    """
+    from PyQt6.QtWidgets import QApplication
+
+    page = DetailPage(icons_dir=None)
+    qtbot.addWidget(page)
+    page.show()
+    qtbot.waitExposed(page)
+
+    app = _full_app()
+    page.set_app(app)
+
+    # Simulate a successful install: operation finishes, installed record set
+    page.start_operation("dl-test", "install")
+    result = type("Result", (), {"ok": True, "error": None})()
+    page.update_operation_finished("dl-test", result)
+    QApplication.processEvents()
+
+    # Now simulate AppsChanged "updated" with update_available=True
+    installed_with_update = {
+        "id": "org.kde.kate",
+        "name": "Kate",
+        "version": "26.08.2-1",
+        "managed_name": "org.kde.kate",
+        "path": "/home/user/Applications/kate.AppImage",
+        "role": "primary",
+        "sha256": "a1b2",
+        "update_policy": "auto",
+        "self_managed": False,
+        "origin": {"catalog_id": "org.kde.kate"},
+        "locked": False,
+        "pending": None,
+        "previous": (),
+        "update_available": True,
+    }
+    page.set_app(app, installed_with_update)
+    QApplication.processEvents()
+
+    assert page._state == "UpdateAvailable", (
+        f"Expected UpdateAvailable after AppsChanged with update_available=True, got {page._state!r}"
+    )
+    assert page._action_button is not None
+    assert page._action_button.text() == "Update"

@@ -317,11 +317,15 @@ def test_failure_conflictpending(qapp_session, fake_manager, dbus_bus):
     qapp_session.processEvents()
     QTest.qWait(500)
 
-    # ConflictPending should trigger conflict dialog
-    assert _wait_for_state(window, "Failed")
+    # ConflictPending should keep Installing state and show conflict dialog
+    assert _wait_for_state(window, "Installing") or window._detail._state == "Installing"
 
-    assert window._detail._state == "Failed"
-    assert window._detail._action_button.text() == "Retry"
+    assert window._detail._state == "Installing", (
+        f"ConflictPending must keep Installing state, got {window._detail._state!r}"
+    )
+    # Action button is disabled (no Cancel once handed to daemon, or still showing Cancel)
+    # The key invariant: state is NOT Failed
+    assert window._detail._state != "Failed"
 
     # Should also have conflict dialog shown
     from PyQt6.QtWidgets import QDialog
@@ -575,7 +579,11 @@ def test_failure_daemon_death(qapp_session, dbus_bus, private_bus_address):
     assert window._detail._action_button.text() == "Open"
 
     proc2.send_signal(signal.SIGTERM)
-    proc2.wait(timeout=3)
+    try:
+        proc2.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc2.kill()
+        proc2.wait(timeout=3)
     # Wait for service to unregister so the next test's fake_manager can register cleanly
     deadline = time.time() + 3
     while time.time() < deadline:

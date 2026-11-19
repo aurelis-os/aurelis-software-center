@@ -116,6 +116,24 @@ class DetailPage(QWidget):
 
     # ------------------------------------------------------------------ public API
 
+    def set_installed(self, record) -> None:
+        """Set the installed record (InstalledApp or None) without rebuilding.
+
+        Call before emitting operation_finished so the state machine sees the
+        correct installed data when it recomputes on the finished signal.
+        """
+        self._installed = record.__dict__ if record is not None else None
+
+    @property
+    def current_app(self) -> App | None:
+        """The app currently shown in the detail page."""
+        return self._app
+
+    @property
+    def current_op_id(self) -> str | None:
+        """The op_id of the currently running operation, or None."""
+        return self._current_op_id
+
     def set_app(self, app: App | None, installed: dict | None = None) -> None:
         """Set the app and optionally its installed state.
 
@@ -126,9 +144,12 @@ class DetailPage(QWidget):
         """
         self._app = app
         self._installed = installed
-        # Clear any terminal state so _update_state recomputes from installed dict
-        if self._state in ("Installed", "Failed") and self._current_op_id is None:
+        # Clear Failed state so _update_state recomputes from installed dict
+        if self._state == "Failed" and self._current_op_id is None:
             self._state = "NotInstalled"
+            self._error_message = ""
+            self._error_details = ""
+            self._error_type = ""
         self._update_state()
         self._rebuild()
         if app is not None:
@@ -148,7 +169,6 @@ class DetailPage(QWidget):
 
     def update_operation_finished(self, op_id: str, result) -> None:
         """Handle operation completion."""
-        # Allow processing if op_id matches, or if we're retrying from a failed state
         if op_id != self._current_op_id and self._state != "Failed":
             return
         if self._progress_widget:
@@ -156,7 +176,6 @@ class DetailPage(QWidget):
                 self._progress_widget.update_event(
                     type("Event", (), {"step": "finish", "fraction": 1.0, "message": ""})()
                 )
-                # Show success toast
                 if self._app:
                     action = self._state
                     if action == "Installing":
@@ -165,17 +184,26 @@ class DetailPage(QWidget):
                             "success",
                             self,
                         )
-                        self._state = "Installed"
+                        # Mark as installed so _installed_state() returns "Installed"
+                        if self._installed is None:
+                            self._installed = {
+                                "id": self._app.id,
+                                "origin": {"catalog_id": self._app.id},
+                            }
                     elif action == "Updating":
                         show_toast(
                             self.tr("{name} updated.").format(name=self._app.name), "success", self
                         )
-                        self._state = "Installed"
+                        if self._installed is None:
+                            self._installed = {
+                                "id": self._app.id,
+                                "origin": {"catalog_id": self._app.id},
+                            }
                     elif action == "Removing":
                         show_toast(
                             self.tr("{name} removed.").format(name=self._app.name), "success", self
                         )
-                        self._state = "NotInstalled"
+                        self._installed = None
             else:
                 self._progress_widget.update_event(
                     type(
@@ -184,15 +212,16 @@ class DetailPage(QWidget):
                         {"step": "fail", "fraction": 1.0, "message": result.error or "Failed"},
                     )()
                 )
-                # Show error toast
                 show_toast(
                     self.tr("Operation failed: {error}").format(error=result.error), "error", self
                 )
+                self._error_message = result.error or "Failed"
+                self._error_details = ""
+                self._error_type = ""
                 self._state = "Failed"
             # Clear current operation tracking
             self._current_op_id = None
             self._current_op_kind = None
-            # Delay hiding to let user see finish state
             from PyQt6.QtCore import QTimer
 
             QTimer.singleShot(1500, self._clear_progress)
@@ -217,8 +246,8 @@ class DetailPage(QWidget):
             self._state = self._operation_state()
             return
 
-        # Preserve terminal states set by operation completion until set_app resets them
-        if self._state in ("Installed", "Failed"):
+        # Failed state is preserved until set_app resets it
+        if self._state == "Failed":
             return
 
         self._state = self._installed_state()
@@ -986,4 +1015,16 @@ class DetailPage(QWidget):
         self._error_message = error
         self._error_details = details
         self._error_type = error_type
+        self._current_op_id = None
+        self._current_op_kind = None
+        self._rebuild()
+
+    def reset_to_idle(self) -> None:
+        """Reset to NotInstalled (or installed state) after a cancelled conflict dialog."""
+        self._current_op_id = None
+        self._current_op_kind = None
+        self._error_message = ""
+        self._error_details = ""
+        self._error_type = ""
+        self._update_state()
         self._rebuild()

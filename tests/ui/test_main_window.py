@@ -1,19 +1,30 @@
 """Tests for ui/main_window.py (P2.1-P2.7): search debounce, no network on UI thread,
-cold start, arch filter, optional-field rendering."""
+cold start, arch filter, optional-field rendering.
+"""
 
 from __future__ import annotations
 
+import os
 import shutil
 import socket
+import subprocess
 import threading
 import time
 from pathlib import Path
 
+import pytest
+from PyQt6.QtDBus import QDBusConnection
+from PyQt6.QtTest import QTest
+from PyQt6.QtWidgets import QApplication
+
+from aurelis_software.backends.appimage import AppImageBackend
 from aurelis_software.core.config import Config
-from aurelis_software.core.models import App, Source
+from aurelis_software.core.models import App, InstalledApp, Source
 from aurelis_software.core.paths import Paths
+from aurelis_software.services.qt_dbus import DbusClient
 from aurelis_software.ui.main_window import SEARCH_DEBOUNCE_MS, MainWindow
 from aurelis_software.ui.screenshot_carousel import ScreenshotCarousel
+from tests.backends.fake_manager1 import FakeManager1
 
 FIXTURE_DB = Path(__file__).resolve().parent.parent / "fixtures" / "apps.db"
 EDGE_DB = Path(__file__).resolve().parent.parent / "fixtures" / "apps.edge.db"
@@ -410,3 +421,133 @@ def test_reflow_vertical_content_exceeds_viewport(qtbot, tmp_path):
         assert (
             last_rect.bottom() > viewport_rect.bottom() or last_rect.right() > viewport_rect.right()
         ), f"Content should exceed viewport: last_rect={last_rect}, viewport={viewport_rect}"
+
+
+# ---------------------------------------------------------------------------
+# _on_apps_changed debounce → UpdateAvailable
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="module")
+def _private_bus_address():
+    result = subprocess.run(
+        ["dbus-daemon", "--session", "--print-address", "--fork"],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, f"dbus-daemon failed: {result.stderr}"
+    address = result.stdout.strip()
+    old = os.environ.get("DBUS_SESSION_BUS_ADDRESS")
+    os.environ["DBUS_SESSION_BUS_ADDRESS"] = address
+    yield address
+    if old is None:
+        os.environ.pop("DBUS_SESSION_BUS_ADDRESS", None)
+    else:
+        os.environ["DBUS_SESSION_BUS_ADDRESS"] = old
+
+
+@pytest.fixture(scope="module")
+def _dbus_bus(_private_bus_address):
+    bus = QDBusConnection.connectToBus(_private_bus_address, "mw-test-bus")
+    assert bus.isConnected()
+    return bus
+
+
+@pytest.fixture
+def _fake_manager(_dbus_bus):
+    from aurelis_software.backends.appimage import DBUS_PATH, DBUS_SERVICE
+
+    fake = FakeManager1(_dbus_bus)
+    yield fake
+    _dbus_bus.unregisterObject(DBUS_PATH)
+    _dbus_bus.unregisterService(DBUS_SERVICE)
+    fake.reset()
+
+
+def _make_window_with_dbus(qtbot, tmp_path, dbus_bus) -> MainWindow:
+    class _TestWindow(MainWindow):
+        def _init_dbus(self) -> None:
+            pass
+
+    paths = _make_paths(tmp_path)
+    window = _TestWindow(paths, _config())
+    qtbot.addWidget(window)
+    window._dbus_client = DbusClient(dbus_bus)
+    window._appimage_backend = AppImageBackend(window._dbus_client)
+    window._appimage_available = True
+    return window
+
+
+def test_apps_changed_debounce_moves_detail_to_update_available(
+    qtbot, tmp_path, _dbus_bus, _fake_manager
+):
+    """After a successful install, AppsChanged 'updated' + List reply with
+    update_available=True must move the detail page to 'UpdateAvailable'.
+
+    Flow:
+    1. Window shows Kate in detail (just installed → Installed state).
+    2. Daemon emits AppsChanged('updated', 'org.kde.kate', 'appimage').
+    3. Debounce fires → _refresh_installed_list → List returns entry with
+       update_available=True.
+    4. _process_installed_list updates the cache and calls set_app again.
+    5. Detail page state becomes 'UpdateAvailable'.
+    """
+    kate = App(
+        key="appimage:org.kde.kate",
+        id="org.kde.kate",
+        source=Source.APPIMAGE,
+        name="Kate",
+        summary="Text editor",
+        version="26.08.3",
+        raw={"sha256": "abc123"},
+    )
+
+    window = _make_window_with_dbus(qtbot, tmp_path, _dbus_bus)
+    window._catalog_apps = [kate]
+    window._catalog_loaded = True
+
+    # Simulate post-install: Kate installed at older version, origin linked → "Installed".
+    inst = InstalledApp(
+        id="org.kde.kate",
+        source=Source.APPIMAGE,
+        name="Kate",
+        version="26.08.2",
+        managed_name="org.kde.kate",
+        path=None,
+        role="primary",
+        sha256=None,
+        update_policy="auto",
+        self_managed=False,
+        origin={"catalog_id": "org.kde.kate"},
+        locked=False,
+        pending=None,
+        previous=(),
+    )
+    window._installed_apps["org.kde.kate"] = inst
+    window._installed_by_catalog_id["org.kde.kate"] = inst
+    window._detail.set_app(kate, inst.__dict__)
+    window._stack.setCurrentWidget(window._detail)
+
+    assert window._detail._state == "Installed"
+
+    # Script List to return the app at the same installed version.
+    # _process_installed_list preserves the existing origin, then
+    # _match_and_update_installed sees origin.catalog_id == kate.id and
+    # update_available() returns True because kate.version (26.08.3) !=
+    # origin.get("version") (None — origin has no version key).
+    _fake_manager.script["List"] = [["org.kde.kate", "Kate", "26.08.2"]]
+
+    # Subscribe to AppsChanged so _on_apps_changed fires.
+    # D-Bus subscription requires @pyqtSlot; instead call _on_apps_changed
+    # directly to simulate the signal arriving, then let the debounce fire.
+    window._on_apps_changed("updated", "org.kde.kate", "appimage")
+
+    # Wait for debounce (300 ms) + D-Bus round-trip.
+    QTest.qWait(700)
+    QApplication.processEvents()
+
+    assert window._detail._state == "UpdateAvailable", (
+        f"Expected 'UpdateAvailable', got {window._detail._state!r}"
+    )

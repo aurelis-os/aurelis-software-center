@@ -70,7 +70,7 @@ class MainWindow(QMainWindow):
         self.config = config
         self.setWindowTitle(self.tr("Aurelis Software"))
         self.resize(1200, 800)
-        self.setMinimumSize(640, 480)
+        self.setMinimumSize(800, 600)
 
         self._catalog_apps: list[App] = []
         self._index = None
@@ -371,15 +371,13 @@ class MainWindow(QMainWindow):
         # Refresh installed page if it exists
         if hasattr(self, "_installed"):
             self._installed.set_apps(list(self._installed_apps.values()))
-        # Refresh detail only if showing an installed app and not mid-operation
-        current = self._detail._app
-        if (
-            current
-            and current.id in self._installed_apps
-            and self._detail._current_op_id is None
-            and self._detail._state not in ("Installed", "Failed")
-        ):
-            self._detail.set_app(current, self._installed_apps[current.id].__dict__)
+        # Refresh detail if showing this app and no operation is running
+        current = self._detail.current_app
+        if current and self._detail.current_op_id is None:
+            installed = self._installed_apps.get(current.id) or self._installed_by_catalog_id.get(
+                current.id
+            )
+            self._detail.set_app(current, installed.__dict__ if installed else None)
 
     def _match_and_update_installed(self, inst: InstalledApp) -> None:
         """Match an installed app to catalog and update its state."""
@@ -651,25 +649,34 @@ class MainWindow(QMainWindow):
         def on_reply(result: dict) -> None:
             # result contains: app, changed, previous
             self._active_operations.pop(f"dl-{app.id}", None)
+            # Build installed record with origin so _update_state returns "Installed"
+            from aurelis_software.core.matching import build_origin
+            from aurelis_software.core.models import InstalledApp, Source
+
+            origin = build_origin(app)
+            inst = InstalledApp(
+                id=app.id,
+                source=Source.APPIMAGE,
+                name=app.name,
+                version=app.version,
+                managed_name=app.id,
+                path=None,
+                role="primary",
+                sha256=app.raw.get("sha256"),
+                update_policy="auto",
+                self_managed=False,
+                origin=origin,
+                locked=False,
+                pending=None,
+                previous=(),
+            )
+            # Update caches so subsequent list refreshes preserve the origin
+            self._installed_apps[app.id] = inst
+            self._installed_by_catalog_id[app.id] = inst
+            # Set installed record on detail before emitting finished
+            self._detail.set_installed(inst)
             self._detail.operation_finished.emit(
                 f"dl-{app.id}", type("Result", (), {"ok": True, "error": None})()
-            )
-
-            # After operation_finished sets state to Installed, refresh the installed list
-            # but do NOT call set_app again (that would reset state via _update_state)
-            def on_list(apps: list) -> None:
-                self._process_installed_list(apps)
-
-            def on_error(error: AurelisError) -> None:
-                self._show_banner(
-                    self.tr("Failed to list installed apps: {error}").format(error=error.message),
-                    kind="error",
-                )
-
-            self._appimage_backend.list_installed_async(
-                {"all": True},
-                reply_cb=on_list,
-                error_cb=on_error,
             )
 
         def on_error(error: AurelisError) -> None:
@@ -695,10 +702,7 @@ class MainWindow(QMainWindow):
 
     def _handle_conflict(self, app: App, path: Path, options: dict, error: AurelisError) -> None:
         """Show conflict dialog and retry with user's choice."""
-        # Set state to Failed so the detail page shows Retry (not Installing)
-        self._detail.operation_failed(str(error), getattr(error, "details", ""), "ConflictPending")
-        self._active_operations.pop(f"dl-{app.id}", None)
-
+        # Keep the Installing state — do NOT call operation_failed
         # Parse conflict payload from error
         payload = getattr(error, "payload", {})
         if isinstance(payload, str):
@@ -723,18 +727,15 @@ class MainWindow(QMainWindow):
         ]
 
         dlg = ConflictDialog(app.name, app.version, conflicts, self)
+        dlg.setWindowModality(Qt.WindowModality.WindowModal)
         dlg.choice_made.connect(lambda choice: self._on_conflict_choice(choice, app, path, options))
-        dlg.show()
+        dlg.open()
 
     def _on_conflict_choice(self, choice: str, app: App, path: Path, options: dict) -> None:
         if choice == "cancel":
             path.unlink(missing_ok=True)
-            # Reset to NotInstalled (app was not installed before the conflict)
-            self._detail._state = "NotInstalled"
-            self._detail._error_message = ""
-            self._detail._error_details = ""
-            self._detail._error_type = ""
-            self._detail._rebuild()
+            self._active_operations.pop(f"dl-{app.id}", None)
+            self._detail.reset_to_idle()
             return
 
         new_options = dict(options)
@@ -933,7 +934,7 @@ class MainWindow(QMainWindow):
                 show_toast(
                     self.tr("Update policy set to {policy}").format(policy=policy), "success", self
                 )
-                self._detail.set_app(self._detail._app, inst.__dict__)
+                self._detail.set_app(self._detail.current_app, inst.__dict__)
 
             def on_error(error: AurelisError) -> None:
                 show_toast(
@@ -955,7 +956,7 @@ class MainWindow(QMainWindow):
             if ok:
                 inst.origin = origin
                 show_toast(self.tr("Catalog link updated"), "success", self)
-                self._detail.set_app(self._detail._app, inst.__dict__)
+                self._detail.set_app(self._detail.current_app, inst.__dict__)
 
         def on_error(error: AurelisError) -> None:
             show_toast(

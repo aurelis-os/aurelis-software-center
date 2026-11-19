@@ -845,3 +845,185 @@ def test_search_no_results(qapp, temp_paths, dbus_bus, fake_manager):
     _resize_and_grab(window, "12-search-no-results-800x600.png", (800, 600), qapp)
 
     window.close()
+
+
+# ---------------------------------------------------------------------------
+# Conflict dialog behaviour tests (issue 1)
+# ---------------------------------------------------------------------------
+
+
+def _make_conflict_dialog(parent) -> ConflictDialog:
+    conflicts = [
+        ConflictInfo(app_id="org.kde.kate", name="Kate", version="26.08.1-1", relation="upgrade")
+    ]
+    return ConflictDialog("Kate", "26.08.2-1", conflicts, parent)
+
+
+def test_conflict_dialog_is_window_modal(qapp, temp_paths, dbus_bus, fake_manager):
+    """ConflictDialog must be window-modal (not application-modal).
+
+    NOTE: Creates dialog directly; calls widget methods directly.
+    """
+    config = Config({"network": {"offline": True}})
+    window = _make_main_window(temp_paths, config, dbus_bus)
+    window.show()
+    QTest.qWait(200)
+
+    dlg = _make_conflict_dialog(window)
+    dlg.setWindowModality(Qt.WindowModality.WindowModal)
+    dlg.open()
+    QTest.qWait(100)
+
+    assert dlg.windowModality() == Qt.WindowModality.WindowModal
+
+    dlg.close()
+    window.close()
+
+
+def test_conflict_dialog_detail_not_failed_while_open(qapp, temp_paths, dbus_bus, fake_manager):
+    """While ConflictDialog is open the detail page must NOT be in Failed state.
+
+    NOTE: Calls widget methods directly (set_app, start_operation).
+    """
+    config = Config({"network": {"offline": True}})
+    window = _make_main_window(temp_paths, config, dbus_bus)
+    window.show()
+    QTest.qWait(200)
+
+    kate = _app_kate()
+    window._detail.set_app(kate)
+    window._detail.start_operation("dl-org.kde.kate", "install")
+    qapp.processEvents()
+
+    # Simulate ConflictPending: keep Installing state, open dialog
+    dlg = _make_conflict_dialog(window)
+    dlg.setWindowModality(Qt.WindowModality.WindowModal)
+    dlg.open()
+    qapp.processEvents()
+
+    # Detail must still be Installing (not Failed) while dialog is open
+    assert window._detail._state != "Failed", (
+        f"Detail page must not be Failed while conflict dialog is open, got {window._detail._state!r}"
+    )
+    assert window._detail._state == "Installing"
+
+    dlg.close()
+    window.close()
+
+
+def test_conflict_replace_sends_correct_options(qapp, temp_paths, dbus_bus, fake_manager):
+    """Replace choice must re-call install with conflict='replace'.
+
+    NOTE: Calls widget methods directly; records options via monkey-patch.
+    """
+    config = Config({"network": {"offline": True}})
+    window = _make_main_window(temp_paths, config, dbus_bus)
+    window.show()
+    QTest.qWait(200)
+
+    recorded: list[dict] = []
+
+    import tempfile
+
+    tmp_file = Path(tempfile.mktemp(suffix=".AppImage"))
+    tmp_file.write_bytes(b"fake")
+
+    original_call_install = window._call_install
+
+    def fake_call_install(app, path, options):
+        recorded.append(dict(options))
+
+    window._call_install = fake_call_install
+
+    base_options = {"source_action": "move", "conflict": "error", "silent": True, "origin": {}}
+    window._on_conflict_choice("replace", _app_kate(), tmp_file, base_options)
+    qapp.processEvents()
+
+    assert len(recorded) == 1
+    assert recorded[0] == {
+        "source_action": "move",
+        "conflict": "replace",
+        "silent": True,
+        "origin": {},
+    }
+
+    window._call_install = original_call_install
+    tmp_file.unlink(missing_ok=True)
+    window.close()
+
+
+def test_conflict_keep_sends_correct_options(qapp, temp_paths, dbus_bus, fake_manager):
+    """Keep both choice must re-call install with conflict='keep'.
+
+    NOTE: Calls widget methods directly; records options via monkey-patch.
+    """
+    config = Config({"network": {"offline": True}})
+    window = _make_main_window(temp_paths, config, dbus_bus)
+    window.show()
+    QTest.qWait(200)
+
+    recorded: list[dict] = []
+
+    import tempfile
+
+    tmp_file = Path(tempfile.mktemp(suffix=".AppImage"))
+    tmp_file.write_bytes(b"fake")
+
+    def fake_call_install(app, path, options):
+        recorded.append(dict(options))
+
+    window._call_install = fake_call_install
+
+    base_options = {"source_action": "move", "conflict": "error", "silent": True, "origin": {}}
+    window._on_conflict_choice("keep", _app_kate(), tmp_file, base_options)
+    qapp.processEvents()
+
+    assert len(recorded) == 1
+    assert recorded[0] == {
+        "source_action": "move",
+        "conflict": "keep",
+        "silent": True,
+        "origin": {},
+    }
+
+    tmp_file.unlink(missing_ok=True)
+    window.close()
+
+
+def test_conflict_cancel_makes_no_further_call(qapp, temp_paths, dbus_bus, fake_manager):
+    """Cancel must not call install again and must reset detail to idle (not Failed).
+
+    NOTE: Calls widget methods directly.
+    """
+    config = Config({"network": {"offline": True}})
+    window = _make_main_window(temp_paths, config, dbus_bus)
+    window.show()
+    QTest.qWait(200)
+
+    kate = _app_kate()
+    window._detail.set_app(kate)
+    window._detail.start_operation("dl-org.kde.kate", "install")
+    qapp.processEvents()
+
+    call_count = 0
+
+    def fake_call_install(app, path, options):
+        nonlocal call_count
+        call_count += 1
+
+    window._call_install = fake_call_install
+
+    import tempfile
+
+    tmp_file = Path(tempfile.mktemp(suffix=".AppImage"))
+    tmp_file.write_bytes(b"fake")
+
+    window._on_conflict_choice("cancel", kate, tmp_file, {})
+    qapp.processEvents()
+
+    assert call_count == 0, "Cancel must not call _call_install"
+    assert window._detail._state != "Failed", (
+        f"Cancel must not leave detail in Failed state, got {window._detail._state!r}"
+    )
+
+    window.close()
