@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import platform
 from pathlib import Path
 from typing import override
@@ -14,6 +15,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QMessageBox,
+    QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -158,13 +160,18 @@ class MainWindow(QMainWindow):
         # Page stack
         self._stack = QStackedWidget()
         self._explore = AppListView(icons_dir=paths.icons_dir)
-        # self._installed = InstalledPage(icons_dir=paths.icons_dir)
+        from aurelis_software.ui.installed_page import InstalledPage
+
+        self._installed = InstalledPage(icons_dir=paths.icons_dir)
         self._detail = DetailPage(icons_dir=paths.icons_dir)
         self._updates = UpdatesPage(icons_dir=paths.icons_dir)
+        # Flathub section page (inline Add Flathub / Refresh actions + app grid)
+        self._flathub_page = _FlathubSectionPage(icons_dir=paths.icons_dir)
         self._stack.addWidget(self._explore)
-        # self._stack.addWidget(self._installed)
+        self._stack.addWidget(self._installed)
         self._stack.addWidget(self._detail)
         self._stack.addWidget(self._updates)
+        self._stack.addWidget(self._flathub_page)
         center_layout.addWidget(self._stack, stretch=1)
 
         # Operations tray (initially hidden)
@@ -178,7 +185,7 @@ class MainWindow(QMainWindow):
         self._sidebar.item_selected.connect(self._on_section)
         self._search.textChanged.connect(self._on_search_text_changed)
         self._explore.selection_changed(self._on_selection_changed)
-        # self._installed.selection_changed(self._on_installed_selection)
+        self._installed.selection_changed(self._on_installed_selection)
         self._detail.install_requested.connect(self._on_install_requested)
         self._detail.update_requested.connect(self._on_update_requested)
         self._detail.remove_requested.connect(self._on_remove_requested)
@@ -300,18 +307,12 @@ class MainWindow(QMainWindow):
 
         # Check whether the AppStream file exists (proxy for a configured Flathub remote).
         if not self._flathub_index.appstream_path.exists():
-            # Offer "Refresh Flathub metadata" action via a banner (R8.5).
-            self._show_banner(
-                self.tr(
-                    "Flathub metadata not found. "
-                    '<a href="refresh-flathub">Refresh Flathub metadata</a>'
-                ),
-                kind="info",
-            )
-        else:
-            # Rebuild the index in a worker if stale (R8.2, R8.3).
-            if self._flathub_index.needs_rebuild():
-                self._start_flathub_index_rebuild()
+            # AppStream not found; the section page will show the appropriate inline action
+            # ("Add Flathub" or "Refresh metadata") when the user navigates there (R12.1, R12.2).
+            pass
+        # Rebuild the index in a worker if stale (R8.2, R8.3).
+        elif self._flathub_index.needs_rebuild():
+            self._start_flathub_index_rebuild()
 
     def _start_flathub_index_rebuild(self) -> None:
         """Run FlathubIndex.rebuild() in a QThread worker; show a banner while in progress."""
@@ -354,18 +355,17 @@ class MainWindow(QMainWindow):
         return any(line.strip() == "flathub" for line in stdout.splitlines())
 
     def _on_add_flathub_remote(self) -> None:
-        """Trigger 'Add Flathub remote' via the FlatpakBackend."""
-        self._hide_banner()
+        """Trigger 'Add Flathub remote' via the FlatpakBackend (R12.1).
+
+        Runs add_remote() in a worker thread; on success triggers metadata refresh.
+        """
         self._show_banner(self.tr("Adding Flathub remote…"), kind="info")
-        op = self._flatpak_backend.add_remote()
-        import threading
 
-        def _run():
-            op.start()
-            if op._work is not None:
-                op._work(op)
-
-        threading.Thread(target=_run, daemon=True).start()
+        worker = _FlatpakAddRemoteWorker(self._flatpak_backend, self)
+        worker.add_finished.connect(self._on_add_remote_finished)
+        worker.add_failed.connect(self._on_add_remote_failed)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
 
     def _on_refresh_flathub_metadata(self) -> None:
         """Run 'flatpak update --appstream --user' via QThread then rebuild the index (R12.2)."""
@@ -399,6 +399,19 @@ class MainWindow(QMainWindow):
         self._flathub_appstream_worker = None
         self._show_banner(
             self.tr("Flathub metadata refresh failed: {error}").format(error=error),
+            kind="warning",
+        )
+
+    def _on_add_remote_finished(self) -> None:
+        """Called on the main thread when 'flatpak remote-add' completes (R12.1)."""
+        self._hide_banner()
+        # Remote added; now download the AppStream metadata automatically.
+        self._on_refresh_flathub_metadata()
+
+    def _on_add_remote_failed(self, error: str) -> None:
+        """Called on the main thread when 'flatpak remote-add' fails."""
+        self._show_banner(
+            self.tr("Failed to add Flathub remote: {error}").format(error=error),
             kind="warning",
         )
 
@@ -664,9 +677,7 @@ class MainWindow(QMainWindow):
         # Deduplicate: we may have incremented count twice for the same FLATPAK entry.
         # Recount cleanly.
         count = sum(
-            1
-            for inst in self._installed_apps.values()
-            if getattr(inst, "update_available", False)
+            1 for inst in self._installed_apps.values() if getattr(inst, "update_available", False)
         )
         self._sidebar.set_updates_count(count)
 
@@ -890,46 +901,49 @@ class MainWindow(QMainWindow):
         self._toolbar.set_title(self.tr("Flathub"))
 
         if not self._flatpak_backend.available:
-            # R10.7: show empty state / banner explaining missing tool
-            self._stack.setCurrentWidget(self._explore)
-            self._explore.set_apps([])
-            self._show_banner(
+            # R10.7: show empty state / banner explaining missing tool (available=False)
+            self._flathub_page.show_unavailable(
                 self.tr(
-                    "Flatpak is not installed. Install flatpak to browse Flathub apps."
-                ),
-                kind="warning",
+                    "Flatpak is not installed on this system. "
+                    "Install flatpak to browse and install Flathub apps."
+                )
             )
+            self._stack.setCurrentWidget(self._flathub_page)
             return
 
-        # Check if no Flathub remote is configured (R12.1)
-        if getattr(self, "_flathub_no_appstream", False) or not self._flathub_index.appstream_path.exists():
-            self._stack.setCurrentWidget(self._explore)
-            self._explore.set_apps([])
-            self._show_banner(
-                self.tr(
-                    "Flathub metadata not found. "
-                    "Run 'flatpak update --appstream --user' to download it."
-                ),
-                kind="info",
-            )
+        # Check if no Flathub remote / AppStream file is present (R12.1)
+        if not self._flathub_index.appstream_path.exists():
+            # Check if the flatpak remote is missing or just the metadata
+            has_remote = self._has_flathub_remote()
+            if has_remote:
+                # Remote exists but metadata not downloaded — offer refresh
+                self._flathub_page.show_needs_refresh(
+                    self.tr("Flathub remote is configured but metadata has not been downloaded."),
+                    refresh_callback=self._on_refresh_flathub_metadata,
+                )
+            else:
+                # No Flathub remote at all — offer "Add Flathub" (R12.1)
+                self._flathub_page.show_add_remote(
+                    self.tr("Flathub is not configured yet."),
+                    add_callback=self._on_add_flathub_remote,
+                )
+            self._stack.setCurrentWidget(self._flathub_page)
             return
 
-        # Show all apps from the Flathub index via FlathubModel (R9.1)
-        self._stack.setCurrentWidget(self._explore)
-        # Build a page of apps from the index to populate the explore view.
+        # AppStream file exists — show the app grid with a "Refresh" action in the header
+        self._stack.setCurrentWidget(self._flathub_page)
+        # Build a page of apps from the index to populate the flathub page.
         from aurelis_software.ui.app_model import FlathubModel
 
         try:
             flathub_model = FlathubModel(self._flathub_index, parent=self)
         except Exception:  # noqa: BLE001
-            self._explore.set_apps([])
-            self._show_banner(self.tr("Could not load Flathub catalog."), kind="error")
+            self._flathub_page.show_unavailable(self.tr("Could not load Flathub catalog."))
             return
-        self._explore._view.setModel(flathub_model)
-        flathub_model.fetchMore(flathub_model.index(0, 0))
-        self._show_banner(
-            self.tr("Flathub — Refresh metadata"),
-            kind="info",
+        self._flathub_page.show_catalog(
+            flathub_model,
+            refresh_callback=self._on_refresh_flathub_metadata,
+            on_app_selected=self._on_flathub_app_selected,
         )
 
     def _on_selection_changed(self) -> None:
@@ -941,7 +955,9 @@ class MainWindow(QMainWindow):
         flathub_record: dict | None = None
         if app.source == Source.APPIMAGE:
             flathub_record = self._flathub_index.get(app.id)
-        self._detail.set_app(app, installed.__dict__ if installed else None, flathub_record=flathub_record)
+        self._detail.set_app(
+            app, installed.__dict__ if installed else None, flathub_record=flathub_record
+        )
         self._stack.setCurrentWidget(self._detail)
         self._toolbar.set_title(app.name)
         self._hide_banner()
@@ -959,6 +975,34 @@ class MainWindow(QMainWindow):
                 self._toolbar.set_title(catalog_app.name)
                 self._hide_banner()
                 self._sidebar.select_section(SECTION_INSTALLED)
+
+    def _on_flathub_app_selected(self, app_dict: dict) -> None:
+        """Handle app selection from the Flathub section page (R9.3).
+
+        Reuses DetailPage with source=flatpak.
+        """
+        from aurelis_software.core.models import App, Source
+
+        app_id = app_dict.get("id", "")
+        raw = app_dict.get("raw", app_dict)
+        # Merge description into raw if it was stored at the top level.
+        if "description" in app_dict and "description" not in raw:
+            raw = {**raw, "description": app_dict["description"]}
+        app = App(
+            key=f"flatpak:{app_id}",
+            id=app_id,
+            name=app_dict.get("name", ""),
+            summary=app_dict.get("summary", ""),
+            version=app_dict.get("version"),
+            source=Source.FLATPAK,
+            store_categories=tuple(app_dict.get("categories", [])),
+            raw=raw,
+        )
+        installed = self._installed_apps.get(app.id)
+        self._detail.set_app(app, installed.__dict__ if installed else None)
+        self._stack.setCurrentWidget(self._detail)
+        self._toolbar.set_title(app.name)
+        self._sidebar.select_section("source:flatpak")
 
     # ------------------------------------------------------------------ operation handlers
 
@@ -1692,6 +1736,7 @@ class _FlathubIndexWorker(QThread):
 
     rebuild_finished = pyqtSignal()
     rebuild_failed = pyqtSignal(str)
+    rebuild_progress = pyqtSignal(float)
 
     def __init__(self, index: FlathubIndex, parent=None) -> None:
         super().__init__(parent)
@@ -1699,7 +1744,7 @@ class _FlathubIndexWorker(QThread):
 
     def run(self) -> None:
         try:
-            self._index.rebuild()
+            self._index.rebuild(progress_cb=self.rebuild_progress.emit)
         except Exception as exc:  # noqa: BLE001 — keep the app alive on any rebuild error
             self.rebuild_failed.emit(str(exc))
             return
@@ -1737,3 +1782,286 @@ class _FlatpakAppstreamWorker(QThread):
             self.refresh_failed.emit(str(error))
             return
         self.refresh_finished.emit()
+
+
+# ── Flathub section page ───────────────────────────────────────────────────────
+
+
+class _FlathubSectionPage(QWidget):
+    """Dedicated page for the Flathub section (R12.1, R12.2, R9.1).
+
+    Can show four states:
+    - **unavailable**: Flatpak not installed or other hard error.
+    - **add_remote**: No Flathub remote configured; offers "Add Flathub" button.
+    - **needs_refresh**: Remote exists but AppStream metadata not downloaded;
+      offers "Refresh Flathub metadata" button.
+    - **catalog**: Normal browsing mode; shows the app grid with a
+      "Refresh Flathub metadata" action in the section header (R12.2).
+    """
+
+    def __init__(self, icons_dir=None, parent=None) -> None:
+        super().__init__(parent)
+        self.icons_dir = icons_dir
+        self._on_app_selected = None
+
+        self._stack = QStackedWidget()
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # ── Section header (shown in catalog mode) ─────────────────────
+        self._header_widget = QWidget()
+        self._header_widget.setFixedHeight(52)
+        self._header_widget.setStyleSheet("background: #fafafa; border-bottom: 1px solid #d1d1d6;")
+        h_layout = QHBoxLayout(self._header_widget)
+        h_layout.setContentsMargins(16, 0, 16, 0)
+        h_layout.setSpacing(12)
+        self._header_title = QLabel("Flathub")
+        self._header_title.setStyleSheet("font-size: 15px; font-weight: 600; color: #1d1d1f;")
+        h_layout.addWidget(self._header_title)
+        h_layout.addStretch()
+        self._refresh_btn = QPushButton("Refresh Flathub metadata")
+        self._refresh_btn.setFixedHeight(32)
+        self._refresh_btn.setMinimumWidth(180)
+        self._refresh_btn.setAccessibleName("Refresh Flathub metadata")
+        self._refresh_btn.setStyleSheet(
+            "QPushButton {"
+            "  background: transparent; color: #0071e3;"
+            "  border: 1px solid #0071e3; border-radius: 8px;"
+            "  font-size: 12px; font-weight: 600; padding: 0 14px;"
+            "}"
+            "QPushButton:hover { background: rgba(0,113,227,0.08); }"
+        )
+        h_layout.addWidget(self._refresh_btn)
+        self._header_widget.hide()
+        root.addWidget(self._header_widget)
+
+        # ── Page stack (empty-state pages + catalog view) ──────────────
+        root.addWidget(self._stack, stretch=1)
+
+        # Unavailable page
+        self._unavailable_page = self._make_message_page()
+        self._stack.addWidget(self._unavailable_page)
+
+        # Add remote page
+        self._add_remote_page = self._make_action_page(
+            icon="📐",
+            action_text="Add Flathub",
+            action_style="filled",
+        )
+        self._stack.addWidget(self._add_remote_page)
+
+        # Needs-refresh page
+        self._refresh_page = self._make_action_page(
+            icon="🔄",
+            action_text="Refresh Flathub metadata",
+            action_style="outline",
+        )
+        self._stack.addWidget(self._refresh_page)
+
+        # Catalog page (app list view)
+        from aurelis_software.ui.app_list_view import AppListView
+
+        self._catalog_view = AppListView(icons_dir=icons_dir)
+        self._stack.addWidget(self._catalog_view)
+
+    # ------------------------------------------------------------------
+    # Static factory helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _make_message_page() -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setSpacing(12)
+        icon_lbl = QLabel("📐")
+        icon_lbl.setStyleSheet("font-size: 48px;")
+        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(icon_lbl)
+        msg = QLabel()
+        msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        msg.setWordWrap(True)
+        msg.setStyleSheet("color: #86868b; font-size: 14px;")
+        msg.setObjectName("_msg")
+        layout.addWidget(msg)
+        return page
+
+    @staticmethod
+    def _make_action_page(*, icon: str, action_text: str, action_style: str) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.setSpacing(16)
+
+        icon_lbl = QLabel(icon)
+        icon_lbl.setStyleSheet("font-size: 48px;")
+        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(icon_lbl)
+
+        msg = QLabel()
+        msg.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        msg.setWordWrap(True)
+        msg.setStyleSheet("color: #1d1d1f; font-size: 14px;")
+        msg.setObjectName("_msg")
+        layout.addWidget(msg)
+
+        btn = QPushButton(action_text)
+        btn.setFixedHeight(38)
+        btn.setMinimumWidth(200)
+        btn.setAccessibleName(action_text)
+        btn.setObjectName("_action_btn")
+        if action_style == "filled":
+            btn.setStyleSheet(
+                "QPushButton {"
+                "  background: #0071e3; color: white; border: none;"
+                "  border-radius: 8px; font-size: 13px; font-weight: 600;"
+                "  padding: 0 20px;"
+                "}"
+                "QPushButton:disabled { background: #d1d1d6; color: #86868b; }"
+                "QPushButton:hover:!disabled { background: #0077ed; }"
+            )
+        else:
+            btn.setStyleSheet(
+                "QPushButton {"
+                "  background: transparent; color: #0071e3;"
+                "  border: 1px solid #0071e3; border-radius: 8px;"
+                "  font-size: 13px; font-weight: 600; padding: 0 20px;"
+                "}"
+                "QPushButton:hover { background: rgba(0,113,227,0.08); }"
+            )
+        layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
+        return page
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def show_unavailable(self, message: str) -> None:
+        """Show 'Flatpak not available' empty state (R10.7)."""
+        self._header_widget.hide()
+        msg_lbl = self._unavailable_page.findChild(QLabel, "_msg")
+        if msg_lbl is not None:
+            msg_lbl.setText(message)
+        self._stack.setCurrentWidget(self._unavailable_page)
+
+    def show_add_remote(self, message: str, *, add_callback) -> None:
+        """Show 'Add Flathub' inline action (R12.1)."""
+        self._header_widget.hide()
+        msg_lbl = self._add_remote_page.findChild(QLabel, "_msg")
+        if msg_lbl is not None:
+            msg_lbl.setText(message)
+        btn = self._add_remote_page.findChild(QPushButton, "_action_btn")
+        if btn is not None:
+            # Disconnect any previous connection before connecting new one.
+            with contextlib.suppress(RuntimeError):
+                btn.clicked.disconnect()
+            btn.clicked.connect(add_callback)
+        self._stack.setCurrentWidget(self._add_remote_page)
+
+    def show_needs_refresh(self, message: str, *, refresh_callback) -> None:
+        """Show 'Refresh Flathub metadata' action when remote exists but no metadata (R12.2)."""
+        self._header_widget.hide()
+        msg_lbl = self._refresh_page.findChild(QLabel, "_msg")
+        if msg_lbl is not None:
+            msg_lbl.setText(message)
+        btn = self._refresh_page.findChild(QPushButton, "_action_btn")
+        if btn is not None:
+            with contextlib.suppress(RuntimeError):
+                btn.clicked.disconnect()
+            btn.clicked.connect(refresh_callback)
+        self._stack.setCurrentWidget(self._refresh_page)
+
+    def show_catalog(
+        self,
+        model,
+        *,
+        refresh_callback,
+        on_app_selected,
+    ) -> None:
+        """Show the app grid with a 'Refresh Flathub metadata' button in the header (R12.2)."""
+        self._on_app_selected = on_app_selected
+
+        # Wire header refresh button.
+        with contextlib.suppress(RuntimeError):
+            self._refresh_btn.clicked.disconnect()
+        self._refresh_btn.clicked.connect(refresh_callback)
+        self._header_widget.show()
+
+        # Set the model on the catalog view and wire selection.
+        self._catalog_view._view.setModel(model)
+        model.fetchMore(model.index(0, 0))
+
+        # Reconnect selection signal (disconnect old to avoid stacking).
+        with contextlib.suppress(RuntimeError, TypeError):
+            self._catalog_view._view.selectionModel().selectionChanged.disconnect(
+                self._on_catalog_selection
+            )
+        self._catalog_view._view.selectionModel().selectionChanged.connect(
+            self._on_catalog_selection
+        )
+
+        self._stack.setCurrentWidget(self._catalog_view)
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _on_catalog_selection(self) -> None:
+        """Forward a Flathub app selection to the main window handler."""
+        if self._on_app_selected is None:
+            return
+        # The catalog_view holds a FlathubModel set directly on _view (no proxy).
+        idx = self._catalog_view._view.currentIndex()
+        if not idx.isValid():
+            return
+        view_model = self._catalog_view._view.model()
+        if view_model is None:
+            return
+        # FlathubModel exposes row_at(); fall back to data() roles.
+        row_dict = None
+        if hasattr(view_model, "row_at"):
+            row_dict = view_model.row_at(idx.row())
+        if row_dict is None:
+            # Reconstruct from roles.
+            from aurelis_software.ui.app_model import FlathubModel
+
+            row_dict = {
+                "id": view_model.data(idx, FlathubModel.IdRole) or "",
+                "name": view_model.data(idx, FlathubModel.NameRole) or "",
+                "summary": view_model.data(idx, FlathubModel.SummaryRole) or "",
+                "version": view_model.data(idx, FlathubModel.VersionRole),
+                "categories": list(view_model.data(idx, FlathubModel.StoreCategoriesRole) or []),
+                "raw": view_model.data(idx, FlathubModel.RawRole) or {},
+            }
+        self._on_app_selected(row_dict)
+
+
+class _FlatpakAddRemoteWorker(QThread):
+    """Background thread that runs 'flatpak remote-add … flathub' (R12.1).
+
+    Emits ``add_finished`` on success and ``add_failed(error)`` on failure.
+    """
+
+    add_finished = pyqtSignal()
+    add_failed = pyqtSignal(str)
+
+    def __init__(self, backend: FlatpakBackend, parent=None) -> None:
+        super().__init__(parent)
+        self._backend = backend
+
+    def run(self) -> None:
+        op = self._backend.add_remote()
+        try:
+            if op._work is not None:
+                op._work(op)
+        except Exception as exc:  # noqa: BLE001
+            self.add_failed.emit(str(exc))
+            return
+        result = getattr(op, "result", None)
+        if result is not None and not getattr(result, "ok", True):
+            error = getattr(result, "error", "unknown error")
+            self.add_failed.emit(str(error))
+            return
+        self.add_finished.emit()

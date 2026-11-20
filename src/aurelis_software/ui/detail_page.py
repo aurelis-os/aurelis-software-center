@@ -136,7 +136,9 @@ class DetailPage(QWidget):
         """The op_id of the currently running operation, or None."""
         return self._current_op_id
 
-    def set_app(self, app: App | None, installed: dict | None = None, flathub_record: dict | None = None) -> None:
+    def set_app(
+        self, app: App | None, installed: dict | None = None, flathub_record: dict | None = None
+    ) -> None:
         """Set the app and optionally its installed state.
 
         Args:
@@ -910,32 +912,44 @@ class DetailPage(QWidget):
     # ------------------------------------------------------------------ also available as
 
     def _also_available_as(self, app: App) -> None:
-        """Show 'Also on Flathub' button when the same app id exists in the Flathub index."""
-        flathub = self._flathub_record
-        if not flathub:
+        """Show 'Also on Flathub' button when the same app id exists in the Flathub index (R12.3).
+
+        For AppImage source apps, always shows the section.  When ``_flathub_record`` is set,
+        shows the "Also on Flathub" action button; otherwise shows a placeholder explaining that
+        other packaging formats may also offer this app.
+        """
+        # Only show this section for AppImage apps.
+        if app.source != Source.APPIMAGE:
             return
+        flathub = self._flathub_record
         self._layout.addWidget(_section_title(self.tr("Also available as")))
         self._layout.addSpacing(8)
-        row = QHBoxLayout()
-        row.setSpacing(10)
-        row.setContentsMargins(0, 0, 0, 0)
-        flatpak_name = flathub.get("name") or app.id
-        label = QLabel(self.tr("This app is also available as a Flatpak on Flathub."))
-        label.setWordWrap(True)
-        label.setStyleSheet("color: #1d1d1f; font-size: 13px;")
-        row.addWidget(label, stretch=1)
-        btn = QPushButton(self.tr("Also on Flathub"))
-        btn.setAccessibleName(self.tr("View {name} on Flathub").format(name=flatpak_name))
-        btn.setFixedHeight(32)
-        btn.setStyleSheet(
-            "QPushButton {"
-            "  background: transparent; color: #0071e3; border: 1px solid #0071e3;"
-            "  border-radius: 8px; font-size: 13px; font-weight: 600; padding: 0 14px;"
-            "}"
-            "QPushButton:hover { background: rgba(0,113,227,0.08); }"
-        )
-        row.addWidget(btn)
-        self._layout.addLayout(row)
+        if flathub:
+            row = QHBoxLayout()
+            row.setSpacing(10)
+            row.setContentsMargins(0, 0, 0, 0)
+            flatpak_name = flathub.get("name") or app.id
+            label = QLabel(self.tr("This app is also available as a Flatpak on Flathub."))
+            label.setWordWrap(True)
+            label.setStyleSheet("color: #1d1d1f; font-size: 13px;")
+            row.addWidget(label, stretch=1)
+            btn = QPushButton(self.tr("Also on Flathub"))
+            btn.setAccessibleName(self.tr("View {name} on Flathub").format(name=flatpak_name))
+            btn.setFixedHeight(32)
+            btn.setStyleSheet(
+                "QPushButton {"
+                "  background: transparent; color: #0071e3; border: 1px solid #0071e3;"
+                "  border-radius: 8px; font-size: 13px; font-weight: 600; padding: 0 14px;"
+                "}"
+                "QPushButton:hover { background: rgba(0,113,227,0.08); }"
+            )
+            row.addWidget(btn)
+            self._layout.addLayout(row)
+        else:
+            placeholder = QLabel(self.tr("(other sources with the same id appear here)"))
+            placeholder.setWordWrap(True)
+            placeholder.setStyleSheet("color: #86868b; font-size: 13px; font-style: italic;")
+            self._layout.addWidget(placeholder)
         self._layout.addSpacing(12)
         self._layout.addWidget(_divider())
         self._layout.addSpacing(16)

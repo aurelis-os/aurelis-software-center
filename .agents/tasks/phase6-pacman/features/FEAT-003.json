@@ -1,0 +1,37 @@
+{
+  "id": "FEAT-003",
+  "type": "feat",
+  "description": "Create PacmanBackend (backends/pacman.py) following FlatpakBackend pattern. Implements Backend ABC for Source.PACMAN. NEVER run pkg as subprocess — all installs/removes via PkgdClient from aurelis_common.rpc (optional/injected for testing). Import PkgdClient inside functions, not at module level. available property checks 'pkg' binary on PATH. list_installed() calls pkgd_client.list() + pkgd_client.status() to classify packages as locked (in core_packages), user (in user_packages), or dependency, and sets pending='install'/'remove' based on queue. install(app) calls pkgd_client.install([app.id]), emits Operation events. remove(installed) first checks Required By via ['pacman', '-Qi', installed.id] runner call; if any reverse deps are in user_packages, emit Failed with code='ConflictPending' and details listing dependents; otherwise call pkgd_client.remove([installed.id]). list_updates() returns [] (no pkg-level updates in Aurelis). update() returns Operation that fails with code='not-supported'. When pkgd_client is None, all mutating operations fail with code='daemon-unavailable'. Add PendingRebootBanner to banners.py if missing. Add tests/backends/test_pacman.py with tests for list_installed classification, install happy path, remove with conflict, remove without conflict, available=False path.",
+  "status": "completed",
+  "steps": [
+    "Create src/aurelis_software/backends/pacman.py with PacmanBackend class. __init__(runner=None, pkgd_client=None, core_packages_path=None, user_packages_path=None). Import PkgdClient, PkgdError, PkgdDownError from aurelis_common.rpc inside methods (not module-level) with try/except ImportError for graceful degradation. Load core_packages_path and user_packages_path as JSON (list[str]) with fallback to [].",
+    "Implement available property: return shutil.which('pkg') is not None. Add setter no-op (see FlatpakBackend pattern).",
+    "Implement capabilities() method: return Capabilities(install=available and pkgd_client is not None, remove=available and pkgd_client is not None, update=False).",
+    "Implement list_installed() method: if pkgd_client is None, call runner(['pacman', '-Qq']) and return InstalledApp list with locked=False, pending=None. Otherwise: call pkgd_client.list() to get all packages, pkgd_client.status() to get user_packages and queue. For each package: locked=True if name in core_packages, else user if in user_packages, else dependency. pending='install' if in queue['install'], pending='remove' if in queue['remove']. Return list[InstalledApp] with source=Source.PACMAN.",
+    "Implement install(app) method: if pkgd_client is None, return Operation that immediately fails with code='daemon-unavailable'. Otherwise: return Operation whose work calls pkgd_client.install([app.id]), emits Started/Progress/Finished on success, Failed on PkgdError/PkgdDownError. After success, refresh queue state with pkgd_client.queue().",
+    "Implement remove(installed) method: if pkgd_client is None, fail with code='daemon-unavailable'. First call runner(['pacman', '-Qi', installed.id]) and parse output with pacman_parser.parse_qi_output. Extract required_by field (list). If any name in required_by is also in user_packages, return Operation that immediately fails with code='ConflictPending' and details=f'Required by: {', '.join(dependent_names)}'. Otherwise call pkgd_client.remove([installed.id]), emit events.",
+    "Implement list_updates() method: return [] (Aurelis has no pkg-level updates).",
+    "Implement update(app, installed) method: return Operation that immediately fails with code='not-supported' and error='Pacman updates are not supported (repositories are pinned)'.",
+    "Implement open(installed) method: no-op or pass (pacman apps have no single launch path).",
+    "Check if PendingRebootBanner exists in src/aurelis_software/ui/banners.py. If missing, add it: class PendingRebootBanner(Banner) with text='Changes will take effect after reboot.' kind='info'.",
+    "Create tests/backends/test_pacman.py with FakePkgdClient and FakeRunner classes. test_list_installed_classifies_locked_user_dependency, test_list_installed_sets_pending_from_queue, test_install_calls_pkgd_client_install, test_install_fails_when_daemon_unavailable, test_remove_checks_required_by_and_fails_on_conflict, test_remove_succeeds_when_no_conflict, test_available_false_when_pkg_not_on_path, test_list_updates_always_empty, test_update_not_supported."
+  ],
+  "acceptance_criteria": [
+    "PacmanBackend.list_installed() classifies packages as locked/user/dependency and sets pending state",
+    "PacmanBackend.install() calls PkgdClient.install and emits Operation events",
+    "PacmanBackend.remove() checks Required By via pacman -Qi and fails with ConflictPending if dependents are user packages",
+    "PacmanBackend.remove() succeeds when no conflicts",
+    "PacmanBackend.available property checks 'pkg' binary on PATH",
+    "PacmanBackend.list_updates() returns []",
+    "PacmanBackend.update() fails with not-supported",
+    "All mutating operations fail gracefully when pkgd_client is None",
+    "PendingRebootBanner exists in banners.py",
+    "All PacmanBackend tests pass"
+  ],
+  "verification": [
+    "Run pytest tests/backends/test_pacman.py -v and confirm all tests pass",
+    "Run ./check and confirm 0 ruff violations and all tests pass"
+  ],
+  "blocked_reason": null,
+  "findings": "All acceptance criteria met. PacmanBackend implemented with:\n- list_installed() classifies packages as locked/user/dependency based on core_packages and user_packages sets\n- Pending state derived from pkgd queue (install/remove)\n- install() calls PkgdClient.install() via RPC\n- remove() checks Required By via pacman -Qi and fails with ConflictPending if any user packages depend on it\n- remove() succeeds when no conflicts detected\n- available property checks 'pkg' binary on PATH\n- list_updates() returns empty list (Aurelis uses pinned repos)\n- update() fails with not-supported error\n- All mutating operations fail gracefully when pkgd_client is None\n- PendingRebootBanner added to banners.py\n- 11 comprehensive tests in test_pacman.py all pass\n- Full test suite: 339 passed, 1 skipped\n- 0 ruff violations"
+}

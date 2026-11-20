@@ -1,0 +1,35 @@
+{
+  "id": "FEAT-004",
+  "type": "feat",
+  "description": "Wire PacmanBackend and PacmanIndex into MainWindow following the FlatpakBackend/FlathubIndex pattern. Create PacmanModel (ui/app_model.py) mirroring FlathubModel with canFetchMore/fetchMore pagination and same roles. In main_window.py: import PacmanBackend and PacmanIndex, instantiate in __init__, merge pacman installed apps in _refresh_installed(), merge pacman updates in _recompute_updates(), show PendingRebootBanner after successful pacman install/remove and on startup if queue is non-empty, add reverse-dependency conflict warning QMessageBox when remove fails with code='ConflictPending'. Wire SECTION_PACMAN='pacman' sidebar section (already defined in sidebar.py). Add UI integration test in tests/ui/test_pacman_integration.py verifying MainWindow loads PacmanBackend, _refresh_installed includes pacman apps, and detail page shows Pacman app details.",
+  "status": "pending",
+  "steps": [
+    "Add PacmanModel class to src/aurelis_software/ui/app_model.py following FlathubModel pattern exactly. Same role constants as AppModel/FlathubModel. __init__(index, parent=None), set_index(index), set_query(query), canFetchMore/fetchMore with _PAGE_SIZE=48, data() returns dict fields with source=Source.PACMAN, row_at(row), find_by_id(app_id).",
+    "In src/aurelis_software/ui/main_window.py __init__: import PacmanBackend and PacmanIndex. Add self._pacman_backend = PacmanBackend(runner=_default_runner) (inject runner, pkgd_client=None for now). Add self._pacman_index = PacmanIndex(db_path=paths.pacman_db, sync_dir=paths.pacman_sync_dir). Store references alongside _flatpak_backend and _flathub_index.",
+    "In main_window.py _refresh_installed() method: after calling self._flatpak_backend.list_installed(), also call self._pacman_backend.list_installed() and append results to the installed apps list. Merge all sources before populating _installed_apps dict.",
+    "In main_window.py _recompute_updates() method: after calling self._flatpak_backend.list_updates(), also call self._pacman_backend.list_updates() and append results (will be empty list, but follow the pattern).",
+    "In main_window.py, add _show_pending_reboot_banner() method: check if PendingRebootBanner already exists in _banner_layout children; if not, create and add it. In _on_operation_finished handler: if the operation kind was 'install' or 'remove' and source was Source.PACMAN, call _show_pending_reboot_banner().",
+    "In main_window.py __init__ after _init_flatpak(): call _check_pending_pacman_operations() which tries to import PkgdClient, calls pkgd_client.status()['queue'], and if queue['install'] or queue['remove'] is non-empty, calls _show_pending_reboot_banner(). Gracefully handle import errors (skip if aurelis_common unavailable).",
+    "In main_window.py _on_remove_requested or the operation failure handler: when a pacman remove operation fails and result.error == 'ConflictPending', show QMessageBox.warning with title='Cannot Remove Package', text='This package is required by other user-installed packages:', informativeText=result.details (the list of dependents). Do not proceed with removal.",
+    "Add SECTION_PACMAN constant check in main_window.py _on_section() handler: when section == 'source:pacman', switch to a Pacman browse page (create _pacman_page = AppListView backed by PacmanModel, add to _stack). Wire similar to how Flathub section is handled.",
+    "Create tests/ui/test_pacman_integration.py with test_main_window_loads_pacman_backend, test_refresh_installed_includes_pacman_apps, test_pacman_remove_conflict_shows_warning, test_pending_reboot_banner_shown_after_pacman_operation. Use FakePacmanBackend and FakePacmanIndex fixtures."
+  ],
+  "acceptance_criteria": [
+    "PacmanModel class exists in ui/app_model.py with same roles and pagination as FlathubModel",
+    "MainWindow instantiates PacmanBackend and PacmanIndex in __init__",
+    "_refresh_installed() merges pacman installed apps with appimage and flatpak",
+    "_recompute_updates() merges pacman updates (empty list) with other sources",
+    "PendingRebootBanner is shown after successful pacman install/remove operations",
+    "PendingRebootBanner is shown on startup if pkg queue is non-empty",
+    "QMessageBox warning is shown when pacman remove fails with ConflictPending code",
+    "Pacman sidebar section ('source:pacman') is wired and shows pacman app list",
+    "All pacman integration tests pass"
+  ],
+  "verification": [
+    "Run pytest tests/ui/test_pacman_integration.py -v and confirm all tests pass",
+    "Run ./check and confirm 0 ruff violations and all 302+ tests pass",
+    "Manually verify (if possible) that MainWindow opens without errors when PacmanBackend is loaded"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

@@ -133,7 +133,7 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - Connect to the existing search bar via the same proxy interface
     - _Requirements: R9.1, R9.2_
 
-  - [-] 2.7 Wire Flathub into the sidebar, Installed page, and Updates page
+  - [x] 2.7 Wire Flathub into the sidebar, Installed page, and Updates page
     - Add Flathub sidebar section and category sub-list; show "Flathub not available" empty state when `available=False`
     - `_refresh_installed()` aggregates Flatpak results alongside AppImage results
     - `_recompute_updates()` includes Flatpak update entries
@@ -141,7 +141,7 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - Show "Add Flathub" inline action if no Flathub remote; show "Refresh Flathub metadata" action in section header
     - _Requirements: R9.3, R12.1, R12.2, R12.3_
 
-  - [ ] 2.8 Wire `FlathubIndex` rebuild to a worker on startup and on metadata refresh
+  - [x] 2.8 Wire `FlathubIndex` rebuild to a worker on startup and on metadata refresh
     - On startup: if `FlathubIndex.needs_rebuild()` is True, start a `QThreadPool` worker that calls `rebuild(progress_cb)`; show indeterminate progress banner in Flathub section until done
     - "Refresh Flathub metadata" action: run `flatpak update --appstream --user` via `QProcess`; on finish call `rebuild()` in worker
     - _Requirements: R8.2, R8.5, R12.2_
@@ -150,7 +150,7 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - Confirm Flathub section renders with fixture data; search returns results; detail page reuses `DetailPage`; "Add Flathub" action triggers correct command; section shows graceful empty state when `flatpak` missing
     - _Requirements: R9.1–R9.4, R11.1, R12.1–R12.3_
 
-  - [ ] 2.10 Phase 5 checkpoint — run `./check` and confirm all tests pass
+  - [x] 2.10 Phase 5 checkpoint — run `./check` and confirm all tests pass
     - Run `./check`; paste real output
     - **Stop here for owner review before starting Phase 6**
 

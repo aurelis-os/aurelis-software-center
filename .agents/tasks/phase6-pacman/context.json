@@ -1,0 +1,28 @@
+{
+  "project_type": "PyQt6 desktop application with plugin backends (AppImage, Flatpak, Pacman)",
+  "language": "Python 3.11+",
+  "build_system": "hatchling (pyproject.toml), no separate compile step required",
+  "test_framework": "pytest with pytest-qt for Qt testing",
+  "build_command": "python -m pip install -e \".[dev]\" (already done)",
+  "test_command": "./check (runs ruff check, ruff format --check, then pytest)",
+  "verification_instructions": "Run ./check after each feature. All 302+ tests must pass with 0 ruff violations. Check that pytest runs without import errors.",
+  "snapshot_or_generated_files": "None. No build artifacts are committed.",
+  "environment_constraints": "Never run pkg as subprocess in production paths (only via PkgdClient RPC). The runner parameter is for pacman read-only commands (pacman -Si, -Qi, -Qq). Tests run against a private D-Bus session (see tests/conftest.py). aurelis_common.rpc.PkgdClient must be imported inside functions (not module-level) for graceful degradation when aurelis_common is unavailable.",
+  "contribution_requirements": "Match code style of backends/flatpak.py and services/flathub_index.py exactly. Pure Python in core/ and backends/ (no Qt). Qt only in ui/ and services/qt_*.py. All backend operations use the Operation pattern (see backends/base.py). Type hints required. Docstrings for public APIs. Module-level command constants as list[str] (never shell strings).",
+  "key_patterns": "1) Backend pattern: FlatpakBackend (backends/flatpak.py) with CommandRunner injection, module-level command constants, _default_runner using subprocess, Operation-returning methods (install/remove/update). 2) Index pattern: FlathubIndex (services/flathub_index.py) with sqlite3 + FTS5, needs_rebuild checking mtime, rebuild with progress_cb, search/get methods, _fts_query helper. 3) Model pattern: FlathubModel (ui/app_model.py) with canFetchMore/fetchMore pagination, same roles as AppModel. 4) Wiring pattern: main_window.py __init__ creates backend + index, _refresh_installed merges sources, operations queue managed centrally.",
+  "relevant_files": [
+    "src/aurelis_software/backends/base.py",
+    "src/aurelis_software/backends/flatpak.py",
+    "src/aurelis_software/services/flathub_index.py",
+    "src/aurelis_software/ui/app_model.py",
+    "src/aurelis_software/ui/main_window.py",
+    "src/aurelis_software/ui/banners.py",
+    "src/aurelis_software/ui/sidebar.py",
+    "src/aurelis_software/core/models.py",
+    "src/aurelis_software/core/paths.py",
+    "tests/conftest.py",
+    "tests/ui/test_flathub_model.py",
+    "docs/how-pkg-works.md"
+  ],
+  "directory_structure": "src/aurelis_software/{core/,backends/,services/,ui/} — core has models + paths, backends implement Backend ABC, services have indexes and Qt adapters, ui has widgets. tests/ mirrors src structure. No tests/fixtures/ directory exists yet; create tests/fixtures/pacman/ for parser test data."
+}

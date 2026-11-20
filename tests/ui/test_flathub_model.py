@@ -159,8 +159,16 @@ def test_fetch_more_with_invalid_parent_is_noop(qtbot):
 def test_roles_match_app_model_constants(qtbot):
     from aurelis_software.ui.app_model import AppModel
 
-    for attr in ("IdRole", "KeyRole", "NameRole", "SummaryRole",
-                 "VersionRole", "SourceRole", "StoreCategoriesRole", "RawRole"):
+    for attr in (
+        "IdRole",
+        "KeyRole",
+        "NameRole",
+        "SummaryRole",
+        "VersionRole",
+        "SourceRole",
+        "StoreCategoriesRole",
+        "RawRole",
+    ):
         assert getattr(FlathubModel, attr) == getattr(AppModel, attr), (
             f"FlathubModel.{attr} != AppModel.{attr}"
         )

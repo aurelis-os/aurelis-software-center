@@ -53,3 +53,12 @@ class RefreshFailedBanner(Banner):
             kind="warning",
             parent=parent,
         )
+
+
+class PendingRebootBanner(Banner):
+    def __init__(self, parent=None) -> None:
+        super().__init__(
+            "Changes will take effect after reboot.",
+            kind="info",
+            parent=parent,
+        )
