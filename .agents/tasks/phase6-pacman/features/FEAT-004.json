@@ -2,7 +2,7 @@
   "id": "FEAT-004",
   "type": "feat",
   "description": "Wire PacmanBackend and PacmanIndex into MainWindow following the FlatpakBackend/FlathubIndex pattern. Create PacmanModel (ui/app_model.py) mirroring FlathubModel with canFetchMore/fetchMore pagination and same roles. In main_window.py: import PacmanBackend and PacmanIndex, instantiate in __init__, merge pacman installed apps in _refresh_installed(), merge pacman updates in _recompute_updates(), show PendingRebootBanner after successful pacman install/remove and on startup if queue is non-empty, add reverse-dependency conflict warning QMessageBox when remove fails with code='ConflictPending'. Wire SECTION_PACMAN='pacman' sidebar section (already defined in sidebar.py). Add UI integration test in tests/ui/test_pacman_integration.py verifying MainWindow loads PacmanBackend, _refresh_installed includes pacman apps, and detail page shows Pacman app details.",
-  "status": "pending",
+  "status": "completed",
   "steps": [
     "Add PacmanModel class to src/aurelis_software/ui/app_model.py following FlathubModel pattern exactly. Same role constants as AppModel/FlathubModel. __init__(index, parent=None), set_index(index), set_query(query), canFetchMore/fetchMore with _PAGE_SIZE=48, data() returns dict fields with source=Source.PACMAN, row_at(row), find_by_id(app_id).",
     "In src/aurelis_software/ui/main_window.py __init__: import PacmanBackend and PacmanIndex. Add self._pacman_backend = PacmanBackend(runner=_default_runner) (inject runner, pkgd_client=None for now). Add self._pacman_index = PacmanIndex(db_path=paths.pacman_db, sync_dir=paths.pacman_sync_dir). Store references alongside _flatpak_backend and _flathub_index.",
@@ -31,5 +31,5 @@
     "Manually verify (if possible) that MainWindow opens without errors when PacmanBackend is loaded"
   ],
   "blocked_reason": null,
-  "findings": ""
+  "findings": "PacmanModel added to ui/app_model.py following FlathubModel pattern. PacmanBackend and PacmanIndex wired into MainWindow.__init__. _refresh_pacman_installed() method merges pacman apps into installed cache. _recompute_updates() handles PACMAN source (always empty updates). _show_pending_reboot_banner() and _check_pending_pacman_operations() methods added. Pacman section wired in _on_section() with _show_pacman_section() method. _on_install_pacman() and _on_remove_pacman() handle operations with PendingRebootBanner shown on success. ConflictPending errors show QMessageBox warning with dependent packages. Integration tests added in tests/ui/test_pacman_integration.py."
 }

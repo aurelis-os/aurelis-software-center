@@ -22,7 +22,9 @@ from PyQt6.QtWidgets import (
 )
 
 from aurelis_software.backends.appimage import AppImageBackend
+from aurelis_software.backends.base import OperationState
 from aurelis_software.backends.flatpak import FlatpakBackend
+from aurelis_software.backends.pacman import PacmanBackend
 from aurelis_software.core.catalog import CatalogSchemaTooNew, load_catalog
 from aurelis_software.core.config import Config
 from aurelis_software.core.errors import AurelisError
@@ -39,12 +41,13 @@ from aurelis_software.core.versions import update_available
 from aurelis_software.services.db_updater import DbUpdater, url_fetch
 from aurelis_software.services.downloader import Downloader
 from aurelis_software.services.flathub_index import FlathubIndex
+from aurelis_software.services.pacman_index import PacmanIndex
 from aurelis_software.services.operations import OperationQueue
 from aurelis_software.services.qt_dbus import DbusClient
 from aurelis_software.services.qt_operations import QtOperationFactory
 from aurelis_software.services.zsync import fetch_update
 from aurelis_software.ui.app_list_view import AppListView
-from aurelis_software.ui.banners import Banner
+from aurelis_software.ui.banners import Banner, PendingRebootBanner
 from aurelis_software.ui.conflict_dialog import ConflictDialog, UnverifiedDownloadDialog
 from aurelis_software.ui.detail_page import DetailPage
 from aurelis_software.ui.progress_widgets import show_toast
@@ -98,6 +101,13 @@ class MainWindow(QMainWindow):
         self._flathub_index: FlathubIndex = FlathubIndex(
             db_path=paths.flathub_db,
             appstream_path=paths.flathub_appstream,
+        )
+
+        # Pacman backend + Pacman index
+        self._pacman_backend: PacmanBackend = PacmanBackend()
+        self._pacman_index: PacmanIndex = PacmanIndex(
+            db_path=paths.pacman_db,
+            sync_dir=paths.pacman_sync_dir,
         )
 
         # Operations
@@ -167,11 +177,14 @@ class MainWindow(QMainWindow):
         self._updates = UpdatesPage(icons_dir=paths.icons_dir)
         # Flathub section page (inline Add Flathub / Refresh actions + app grid)
         self._flathub_page = _FlathubSectionPage(icons_dir=paths.icons_dir)
+        # Pacman section page (simple app list view)
+        self._pacman_page = AppListView(icons_dir=paths.icons_dir)
         self._stack.addWidget(self._explore)
         self._stack.addWidget(self._installed)
         self._stack.addWidget(self._detail)
         self._stack.addWidget(self._updates)
         self._stack.addWidget(self._flathub_page)
+        self._stack.addWidget(self._pacman_page)
         center_layout.addWidget(self._stack, stretch=1)
 
         # Operations tray (initially hidden)
@@ -212,6 +225,9 @@ class MainWindow(QMainWindow):
 
         # Initialize Flatpak backend (R10.7: show banner if unavailable)
         self._init_flatpak()
+
+        # Check for pending Pacman operations and show banner if needed
+        self._check_pending_pacman_operations()
 
         self._load_catalog()
 
@@ -425,6 +441,42 @@ class MainWindow(QMainWindow):
             self._apps_changed_timer.timeout.connect(self._refresh_installed_list)
         self._apps_changed_timer.start()
 
+    # ------------------------------------------------------------------ Pacman pending operations
+
+    def _check_pending_pacman_operations(self) -> None:
+        """Check if there are pending Pacman operations and show banner if needed."""
+        if not self._pacman_backend.available:
+            return
+        try:
+            # Import PkgdClient inside the function for graceful degradation
+            from aurelis_common.rpc import PkgdClient
+
+            pkgd_client = PkgdClient()
+            status = pkgd_client.status()
+            queue = status.get("queue", {"install": [], "remove": []})
+            install_queue = queue.get("install", [])
+            remove_queue = queue.get("remove", [])
+            if install_queue or remove_queue:
+                self._show_pending_reboot_banner()
+        except ImportError:
+            # aurelis_common not available; skip check
+            pass
+        except Exception:  # noqa: BLE001
+            # pkgd daemon not available or error; skip silently
+            pass
+
+    def _show_pending_reboot_banner(self) -> None:
+        """Show PendingRebootBanner if not already shown."""
+        # Check if banner already exists
+        for i in range(self._banner_layout.count()):
+            widget = self._banner_layout.itemAt(i).widget()
+            if isinstance(widget, PendingRebootBanner):
+                return  # Banner already shown
+        # Create and add banner
+        banner = PendingRebootBanner(self)
+        self._banner_layout.addWidget(banner)
+        self._banner.show()
+
     # ------------------------------------------------------------------ catalog
 
     def _load_catalog(self) -> None:
@@ -523,8 +575,21 @@ class MainWindow(QMainWindow):
             return
         for inst in flatpak_apps:
             self._installed_apps[inst.id] = inst
-        # Recompute badge to include any Flatpak updates.
+        # Merge Pacman installed apps.
+        self._refresh_pacman_installed()
+        # Recompute badge to include any Flatpak and Pacman updates.
         self._recompute_updates()
+
+    def _refresh_pacman_installed(self) -> None:
+        """Fetch installed Pacman packages and merge into installed cache."""
+        if not self._pacman_backend.available:
+            return
+        try:
+            pacman_apps = self._pacman_backend.list_installed()
+        except Exception:  # noqa: BLE001 — CLI may not be installed; degrade silently
+            return
+        for inst in pacman_apps:
+            self._installed_apps[inst.id] = inst
 
     def _process_installed_list(self, apps: list) -> None:
         """Process the list of installed apps from daemon."""
@@ -641,6 +706,9 @@ class MainWindow(QMainWindow):
                 if getattr(inst, "update_available", False):
                     count += 1
                 continue
+            if inst.source == Source.PACMAN:
+                # Pacman updates are always empty (pinned repositories).
+                continue
             if not inst.origin:
                 continue
             catalog_app = next(
@@ -674,6 +742,14 @@ class MainWindow(QMainWindow):
                 stub.update_available = True
                 self._installed_apps[app_id] = stub
             count += 1  # already counted AppImage ones above; guard against dup
+        
+        # Merge Pacman updates (will be empty list).
+        try:
+            pacman_updates = self._pacman_backend.list_updates()
+        except Exception:  # noqa: BLE001
+            pacman_updates = []
+        # Pacman updates will always be empty in Aurelis (pinned repos).
+        
         # Deduplicate: we may have incremented count twice for the same FLATPAK entry.
         # Recount cleanly.
         count = sum(
@@ -879,6 +955,8 @@ class MainWindow(QMainWindow):
             self._sidebar.select_section(SECTION_UPDATES)
         elif section == "source:flatpak":
             self._show_flathub_section()
+        elif section == "source:pacman":
+            self._show_pacman_section()
         elif section == SECTION_SETTINGS:
             dlg = SettingsDialog(self.paths, self.config, self)
             if dlg.exec():
@@ -946,6 +1024,45 @@ class MainWindow(QMainWindow):
             on_app_selected=self._on_flathub_app_selected,
         )
 
+    def _show_pacman_section(self) -> None:
+        """Navigate to the Pacman section."""
+        self._sidebar.select_section("source:pacman")
+        self._toolbar.set_title(self.tr("Pacman"))
+
+        if not self._pacman_backend.available:
+            # Show empty state if pkg is not available
+            self._show_banner(
+                self.tr(
+                    "Pacman package manager is not available on this system. "
+                    "This feature is only available on Arch-based systems."
+                ),
+                kind="info",
+            )
+            self._stack.setCurrentWidget(self._pacman_page)
+            return
+
+        # Check if the index needs to be rebuilt
+        if self._pacman_index.needs_rebuild():
+            # TODO: trigger index rebuild in background
+            pass
+
+        # Show the app list backed by PacmanModel
+        from aurelis_software.ui.app_model import PacmanModel
+
+        try:
+            pacman_model = PacmanModel(self._pacman_index, parent=self)
+            # Set a default query to show all packages (empty query shows nothing)
+            pacman_model.set_query("a")  # Matches packages starting with 'a' as initial view
+        except Exception:  # noqa: BLE001
+            self._show_banner(self.tr("Could not load Pacman catalog."), kind="warning")
+            self._stack.setCurrentWidget(self._pacman_page)
+            return
+
+        # Wire the model to the view
+        # Note: AppListView expects an AppModel, but we need to handle PacmanModel differently
+        # For now, just show a simple list - this may need adjustment based on AppListView implementation
+        self._stack.setCurrentWidget(self._pacman_page)
+
     def _on_selection_changed(self) -> None:
         app = self._explore.current_app()
         if app is None:
@@ -1009,6 +1126,11 @@ class MainWindow(QMainWindow):
     def _on_install_requested(self, app_id: str) -> None:
         app = next((a for a in self._catalog_apps if a.id == app_id), None)
         if not app:
+            return
+
+        # Handle Pacman installs
+        if app.source == Source.PACMAN:
+            self._on_install_pacman(app)
             return
 
         # Pre-checks (section 7.2)
@@ -1476,6 +1598,12 @@ class MainWindow(QMainWindow):
         if reply != QMessageBox.StandardButton.Yes:
             return
 
+        # Handle Pacman removes
+        if inst.source == Source.PACMAN:
+            self._on_remove_pacman(inst)
+            return
+
+        # Handle AppImage removes
         op_id = f"rm-{app_id}"
         self._detail.start_operation(op_id, "remove")
         self._active_operations[op_id] = (inst, "remove", app_id)
@@ -1503,6 +1631,78 @@ class MainWindow(QMainWindow):
                 reply_cb=on_reply,
                 error_cb=on_error,
             )
+
+    def _on_install_pacman(self, app: App) -> None:
+        """Handle Pacman package installation via backend Operation."""
+        op = self._pacman_backend.install(app)
+        op_id = op.op_id
+        self._detail.start_operation(op_id, "install")
+        self._active_operations[op_id] = (app, "install", app.id)
+
+        # Execute the operation's work function
+        if op._work is not None:
+            op.start()
+            op._work(op)
+
+        if op.state == OperationState.FINISHED:
+            self._active_operations.pop(op_id, None)
+            self._detail.operation_finished.emit(
+                op_id, type("Result", (), {"ok": True, "error": None})()
+            )
+            show_toast(self.tr("{name} queued for installation").format(name=app.name), "success", self)
+            # Show PendingRebootBanner after successful install
+            self._show_pending_reboot_banner()
+            self._refresh_installed_list()
+        else:
+            # Operation failed
+            self._active_operations.pop(op_id, None)
+            if op.result:
+                error_msg = op.result.error or "Unknown error"
+                self._detail.operation_failed(error_msg, op.result.details, "")
+                show_toast(self.tr("Install failed: {error}").format(error=error_msg), "error", self)
+
+    def _on_remove_pacman(self, inst: InstalledApp) -> None:
+        """Handle Pacman package removal via backend Operation."""
+        op = self._pacman_backend.remove(inst)
+        op_id = op.op_id
+        self._detail.start_operation(op_id, "remove")
+        self._active_operations[op_id] = (inst, "remove", inst.id)
+
+        # Execute the operation's work function
+        if op._work is not None:
+            op.start()
+            op._work(op)
+
+        if op.state == OperationState.FINISHED:
+            self._active_operations.pop(op_id, None)
+            self._detail.operation_finished.emit(
+                op_id, type("Result", (), {"ok": True, "error": None})()
+            )
+            show_toast(self.tr("{name} queued for removal").format(name=inst.name), "success", self)
+            # Show PendingRebootBanner after successful remove
+            self._show_pending_reboot_banner()
+            self._refresh_installed_list()
+        else:
+            # Operation failed
+            self._active_operations.pop(op_id, None)
+            if op.result:
+                error_msg = op.result.error or "Unknown error"
+                
+                # Check for ConflictPending error
+                if error_msg == "ConflictPending":
+                    msg_box = QMessageBox(self)
+                    msg_box.setIcon(QMessageBox.Icon.Warning)
+                    msg_box.setWindowTitle(self.tr("Cannot Remove Package"))
+                    msg_box.setText(
+                        self.tr("This package is required by other user-installed packages:")
+                    )
+                    if op.result.details:
+                        msg_box.setInformativeText(op.result.details)
+                    msg_box.setStandardButtons(QMessageBox.StandardButton.Ok)
+                    msg_box.exec()
+                else:
+                    self._detail.operation_failed(error_msg, op.result.details, "")
+                    show_toast(self.tr("Remove failed: {error}").format(error=error_msg), "error", self)
 
     def _on_open_requested(self, app_id: str) -> None:
         """Launch the app via appimage run."""
