@@ -27,7 +27,7 @@ DEFAULTS: dict[str, Any] = {
     "network": {"offline": False},
     "flathub": {"enabled": False},
     "pacman": {"enabled": False},
-    "updates": {"include_self_managed": False},
+    "updates": {"include_self_managed": False, "notify": False},
     "downloads": {"allow_unverified": "ask"},
     "wizard": {"run_without_asking": []},
 }

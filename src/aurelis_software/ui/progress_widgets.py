@@ -431,6 +431,7 @@ def show_toast(
     text: str,
     kind: str = "success",
     parent: QWidget | None = None,
+    *,
     action_text: str | None = None,
     action_callback: Callable[[], None] | None = None,
     duration_ms: int | None = None,

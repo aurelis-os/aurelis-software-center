@@ -56,5 +56,29 @@ class Paths:
         return self.cache_dir / "aurelis-software" / "downloads"
 
     @property
+    def flathub_db(self) -> Path:
+        return self.cache_dir / "aurelis-software" / "flathub.sqlite"
+
+    @property
+    def flathub_appstream(self) -> Path:
+        """Expected location of the Flatpak AppStream XML for Flathub (may be gzip)."""
+        import os
+
+        # Respect XDG_DATA_HOME override; fall back to standard Flatpak path.
+        xdg_data = Path(
+            os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+        )
+        return (
+            xdg_data
+            / "flatpak"
+            / "repo"
+            / "appstream"
+            / "flathub"
+            / "x86_64"
+            / "active"
+            / "appstream.xml.gz"
+        )
+
+    @property
     def state_file(self) -> Path:
         return self.state_dir / "aurelis-software" / "catalog-state.json"

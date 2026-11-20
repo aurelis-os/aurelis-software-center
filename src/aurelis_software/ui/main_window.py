@@ -20,6 +20,7 @@ from PyQt6.QtWidgets import (
 )
 
 from aurelis_software.backends.appimage import AppImageBackend
+from aurelis_software.backends.flatpak import FlatpakBackend
 from aurelis_software.core.catalog import CatalogSchemaTooNew, load_catalog
 from aurelis_software.core.config import Config
 from aurelis_software.core.errors import AurelisError
@@ -35,6 +36,7 @@ from aurelis_software.core.search import build_index, search
 from aurelis_software.core.versions import update_available
 from aurelis_software.services.db_updater import DbUpdater, url_fetch
 from aurelis_software.services.downloader import Downloader
+from aurelis_software.services.flathub_index import FlathubIndex
 from aurelis_software.services.operations import OperationQueue
 from aurelis_software.services.qt_dbus import DbusClient
 from aurelis_software.services.qt_operations import QtOperationFactory
@@ -43,7 +45,7 @@ from aurelis_software.ui.app_list_view import AppListView
 from aurelis_software.ui.banners import Banner
 from aurelis_software.ui.conflict_dialog import ConflictDialog, UnverifiedDownloadDialog
 from aurelis_software.ui.detail_page import DetailPage
-from aurelis_software.ui.progress_widgets import InlineProgressWidget, show_toast
+from aurelis_software.ui.progress_widgets import show_toast
 from aurelis_software.ui.settings_dialog import SettingsDialog
 from aurelis_software.ui.sidebar import (
     SECTION_EXPLORE,
@@ -52,6 +54,7 @@ from aurelis_software.ui.sidebar import (
     SECTION_UPDATES,
     Sidebar,
 )
+from aurelis_software.ui.updates_page import UpdatesPage
 
 SEARCH_DEBOUNCE_MS = 120
 
@@ -88,6 +91,13 @@ class MainWindow(QMainWindow):
         self._appimage_available = False
         self._dbus_client: DbusClient | None = None
 
+        # Flatpak backend + Flathub index
+        self._flatpak_backend: FlatpakBackend = FlatpakBackend()
+        self._flathub_index: FlathubIndex = FlathubIndex(
+            db_path=paths.flathub_db,
+            appstream_path=paths.flathub_appstream,
+        )
+
         # Operations
         self._operation_queue = OperationQueue()
         self._qt_ops = QtOperationFactory()
@@ -100,6 +110,10 @@ class MainWindow(QMainWindow):
         self._installed_by_catalog_id: dict[str, InstalledApp] = {}
         self._update_nam_refs: dict[str, QNetworkAccessManager] = {}
         self._update_downloaders: dict[str, object] = {}
+
+        # Update-all sequential queue (FIFO order through the operation flow)
+        self._update_all_queue: list[str] = []
+        self._update_all_active: bool = False
 
         # ── Root layout ────────────────────────────────────────────────────
         central = QWidget()
@@ -146,13 +160,11 @@ class MainWindow(QMainWindow):
         self._explore = AppListView(icons_dir=paths.icons_dir)
         # self._installed = InstalledPage(icons_dir=paths.icons_dir)
         self._detail = DetailPage(icons_dir=paths.icons_dir)
-        self._updates_placeholder = self._make_placeholder(
-            self.tr("Updates"), self.tr("Updates appear here after the first catalog refresh.")
-        )
+        self._updates = UpdatesPage(icons_dir=paths.icons_dir)
         self._stack.addWidget(self._explore)
         # self._stack.addWidget(self._installed)
         self._stack.addWidget(self._detail)
-        self._stack.addWidget(self._updates_placeholder)
+        self._stack.addWidget(self._updates)
         center_layout.addWidget(self._stack, stretch=1)
 
         # Operations tray (initially hidden)
@@ -179,6 +191,10 @@ class MainWindow(QMainWindow):
         self._detail.app_name_changed.connect(self._toolbar.set_title)
         self._detail.cancel_requested.connect(self._on_cancel_requested)
 
+        # Updates page wiring
+        self._updates.update_requested.connect(self._on_update_requested)
+        self._updates.update_all_requested.connect(self._on_update_all_requested)
+
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.timeout.connect(self._run_search)
@@ -186,6 +202,9 @@ class MainWindow(QMainWindow):
 
         # Initialize D-Bus client and AppImage backend
         self._init_dbus()
+
+        # Initialize Flatpak backend (R10.7: show banner if unavailable)
+        self._init_flatpak()
 
         self._load_catalog()
 
@@ -207,6 +226,22 @@ class MainWindow(QMainWindow):
         if hasattr(self, "_refresh_worker") and self._refresh_worker.isRunning():
             self._refresh_worker.quit()
             self._refresh_worker.wait(1000)
+
+        # Stop Flathub index rebuild worker if running
+        if (
+            getattr(self, "_flathub_index_worker", None) is not None
+            and self._flathub_index_worker.isRunning()
+        ):
+            self._flathub_index_worker.quit()
+            self._flathub_index_worker.wait(2000)
+
+        # Stop Flatpak appstream refresh worker if running
+        if (
+            getattr(self, "_flathub_appstream_worker", None) is not None
+            and self._flathub_appstream_worker.isRunning()
+        ):
+            self._flathub_appstream_worker.quit()
+            self._flathub_appstream_worker.wait(5000)
 
         # Clean up D-Bus client
         if hasattr(self, "_dbus_client") and self._dbus_client:
@@ -248,6 +283,122 @@ class MainWindow(QMainWindow):
         self._appimage_available = False
         self._show_banner(
             self.tr("AppImage service unavailable: {error}").format(error=error.message),
+            kind="warning",
+        )
+
+    # ------------------------------------------------------------------ Flatpak / Flathub init
+
+    def _init_flatpak(self) -> None:
+        """Check Flatpak availability and kick off FlathubIndex rebuild if needed (R8.2, R8.5)."""
+        if not self._flatpak_backend.available:
+            # Show a non-fatal banner; the section will show its own empty state.
+            return
+
+        # Initialise worker references so closeEvent can safely check them.
+        self._flathub_index_worker: _FlathubIndexWorker | None = None
+        self._flathub_appstream_worker: _FlatpakAppstreamWorker | None = None
+
+        # Check whether the AppStream file exists (proxy for a configured Flathub remote).
+        if not self._flathub_index.appstream_path.exists():
+            # Offer "Refresh Flathub metadata" action via a banner (R8.5).
+            self._show_banner(
+                self.tr(
+                    "Flathub metadata not found. "
+                    '<a href="refresh-flathub">Refresh Flathub metadata</a>'
+                ),
+                kind="info",
+            )
+        else:
+            # Rebuild the index in a worker if stale (R8.2, R8.3).
+            if self._flathub_index.needs_rebuild():
+                self._start_flathub_index_rebuild()
+
+    def _start_flathub_index_rebuild(self) -> None:
+        """Run FlathubIndex.rebuild() in a QThread worker; show a banner while in progress."""
+        # Avoid launching a second worker if one is already running.
+        if (
+            getattr(self, "_flathub_index_worker", None) is not None
+            and self._flathub_index_worker.isRunning()
+        ):
+            return
+
+        self._show_banner(self.tr("Building Flathub index…"), kind="info")
+
+        worker = _FlathubIndexWorker(self._flathub_index, self)
+        self._flathub_index_worker = worker
+        worker.rebuild_finished.connect(self._on_flathub_index_rebuilt)
+        worker.rebuild_failed.connect(self._on_flathub_index_failed)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _on_flathub_index_rebuilt(self) -> None:
+        """Called on the main thread when the index worker completes successfully."""
+        self._hide_banner()
+        self._flathub_index_worker = None
+
+    def _on_flathub_index_failed(self, error: str) -> None:
+        """Called on the main thread when the index worker fails."""
+        self._show_banner(
+            self.tr("Failed to build Flathub index: {error}").format(error=error),
+            kind="warning",
+        )
+        self._flathub_index_worker = None
+
+    def _has_flathub_remote(self) -> bool:
+        """Return True if the user has a Flathub remote configured."""
+        exit_code, stdout, _stderr = self._flatpak_backend._runner(
+            ["flatpak", "remotes", "--user", "--columns=name"]
+        )
+        if exit_code != 0:
+            return False
+        return any(line.strip() == "flathub" for line in stdout.splitlines())
+
+    def _on_add_flathub_remote(self) -> None:
+        """Trigger 'Add Flathub remote' via the FlatpakBackend."""
+        self._hide_banner()
+        self._show_banner(self.tr("Adding Flathub remote…"), kind="info")
+        op = self._flatpak_backend.add_remote()
+        import threading
+
+        def _run():
+            op.start()
+            if op._work is not None:
+                op._work(op)
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _on_refresh_flathub_metadata(self) -> None:
+        """Run 'flatpak update --appstream --user' via QThread then rebuild the index (R12.2)."""
+        # Avoid launching a second worker while one is already running.
+        if (
+            getattr(self, "_flathub_appstream_worker", None) is not None
+            and self._flathub_appstream_worker.isRunning()
+        ):
+            return
+
+        self._hide_banner()
+        self._show_banner(self.tr("Refreshing Flathub metadata…"), kind="info")
+
+        worker = _FlatpakAppstreamWorker(self._flatpak_backend, self)
+        self._flathub_appstream_worker = worker
+        worker.refresh_finished.connect(self._on_appstream_refresh_finished)
+        worker.refresh_failed.connect(self._on_appstream_refresh_failed)
+        worker.finished.connect(worker.deleteLater)
+        worker.start()
+
+    def _on_appstream_refresh_finished(self) -> None:
+        """Called on the main thread when 'flatpak update --appstream' completes."""
+        self._flathub_appstream_worker = None
+        if self._flathub_index.appstream_path.exists():
+            self._start_flathub_index_rebuild()
+        else:
+            self._hide_banner()
+
+    def _on_appstream_refresh_failed(self, error: str) -> None:
+        """Called on the main thread when 'flatpak update --appstream' fails."""
+        self._flathub_appstream_worker = None
+        self._show_banner(
+            self.tr("Flathub metadata refresh failed: {error}").format(error=error),
             kind="warning",
         )
 
@@ -327,22 +478,40 @@ class MainWindow(QMainWindow):
     def _refresh_installed_list(self) -> None:
         """Fetch installed AppImages from daemon and match to catalog."""
         if not self._appimage_backend or not self._appimage_available:
+            # Still refresh Flatpak even if AppImage daemon is unavailable.
+            self._refresh_flatpak_installed()
             return
 
         def on_list(apps: list) -> None:
             self._process_installed_list(apps)
+            # Aggregate Flatpak installed apps in a separate step.
+            self._refresh_flatpak_installed()
 
         def on_error(error: AurelisError) -> None:
             self._show_banner(
                 self.tr("Failed to list installed apps: {error}").format(error=error.message),
                 kind="error",
             )
+            self._refresh_flatpak_installed()
 
         self._appimage_backend.list_installed_async(
             {"all": True},
             reply_cb=on_list,
             error_cb=on_error,
         )
+
+    def _refresh_flatpak_installed(self) -> None:
+        """Fetch installed Flatpak apps from the flatpak CLI and merge into installed cache."""
+        if not self._flatpak_backend.available:
+            return
+        try:
+            flatpak_apps = self._flatpak_backend.list_installed()
+        except Exception:  # noqa: BLE001 — CLI may not be installed; degrade silently
+            return
+        for inst in flatpak_apps:
+            self._installed_apps[inst.id] = inst
+        # Recompute badge to include any Flatpak updates.
+        self._recompute_updates()
 
     def _process_installed_list(self, apps: list) -> None:
         """Process the list of installed apps from daemon."""
@@ -451,7 +620,14 @@ class MainWindow(QMainWindow):
     def _recompute_updates(self) -> None:
         """Recompute update availability for all installed apps and update sidebar badge."""
         count = 0
+        notify_count = 0
         for inst in self._installed_apps.values():
+            if inst.source == Source.FLATPAK:
+                # Flatpak updates are determined by the CLI, not the catalog.
+                # Mark them when update_available is already set by list_updates.
+                if getattr(inst, "update_available", False):
+                    count += 1
+                continue
             if not inst.origin:
                 continue
             catalog_app = next(
@@ -460,9 +636,177 @@ class MainWindow(QMainWindow):
             if catalog_app and self._update_available_for(inst, catalog_app):
                 inst.update_available = True
                 count += 1
+                # Notification count excludes manual, pinned, and self_managed apps
+                if inst.update_policy not in ("manual", "pinned") and not inst.self_managed:
+                    notify_count += 1
             else:
                 inst.update_available = False
+
+        # Also count available Flatpak updates from the CLI.
+        flatpak_updates = self._get_flatpak_updates()
+        for upd in flatpak_updates:
+            from aurelis_software.ui.updates_page import _id_of
+
+            app_id = _id_of(upd.app_key)
+            if app_id in self._installed_apps:
+                self._installed_apps[app_id].update_available = True
+            else:
+                # Store a stub so the Updates page can show it.
+                stub = InstalledApp(
+                    id=app_id,
+                    source=Source.FLATPAK,
+                    name=app_id,
+                    version=None,
+                )
+                stub.update_available = True
+                self._installed_apps[app_id] = stub
+            count += 1  # already counted AppImage ones above; guard against dup
+        # Deduplicate: we may have incremented count twice for the same FLATPAK entry.
+        # Recount cleanly.
+        count = sum(
+            1
+            for inst in self._installed_apps.values()
+            if getattr(inst, "update_available", False)
+        )
         self._sidebar.set_updates_count(count)
+
+        # Send desktop notification if update count increased and notifications are enabled
+        prev_notify_count = getattr(self, "_last_notify_count", 0)
+        self._last_notify_count = notify_count
+        if notify_count > prev_notify_count and bool(self.config.get("updates.notify")):
+            self._send_update_notification(notify_count)
+
+    def _send_update_notification(self, count: int) -> None:
+        """Send a desktop notification for available updates via org.freedesktop.Notifications."""
+        try:
+            from PyQt6.QtDBus import QDBusConnection, QDBusMessage
+
+            bus = QDBusConnection.sessionBus()
+            if not bus.isConnected():
+                return
+
+            msg = QDBusMessage.createMethodCall(
+                "org.freedesktop.Notifications",
+                "/org/freedesktop/Notifications",
+                "org.freedesktop.Notifications",
+                "Notify",
+            )
+            body = (
+                self.tr("1 update is available.")
+                if count == 1
+                else self.tr("{count} updates are available.").format(count=count)
+            )
+            msg.setArguments(
+                [
+                    "aurelis-software",  # app_name
+                    0,  # replaces_id (0 = new notification)
+                    "software-update-available",  # app_icon
+                    self.tr("Updates available"),  # summary
+                    body,  # body
+                    [],  # actions
+                    {},  # hints
+                    5000,  # expire_timeout ms
+                ]
+            )
+            bus.call(msg)
+        except Exception:  # noqa: BLE001 — best-effort notification; never crash on D-Bus
+            pass
+
+    def _get_flatpak_updates(self) -> list:
+        """Return UpdateInfo list from the Flatpak CLI (empty if unavailable)."""
+        if not self._flatpak_backend.available:
+            return []
+        try:
+            return self._flatpak_backend.list_updates()
+        except Exception:  # noqa: BLE001
+            return []
+
+    def _collect_updates(self) -> list:
+        """Build the list of UpdateInfo for apps that currently have an update.
+
+        Respects policies: ``auto`` and ``manual`` appear; ``pinned`` never;
+        ``self_managed`` only when ``updates.include_self_managed`` is enabled
+        (R2.1). The same eligibility used for the badge is applied here.
+        """
+        from aurelis_software.core.models import UpdateInfo
+
+        include_self_managed = bool(self.config.get("updates.include_self_managed"))
+        updates: list[UpdateInfo] = []
+
+        # AppImage updates (catalog-based)
+        for inst in self._installed_apps.values():
+            if inst.source != Source.APPIMAGE:
+                continue
+            if not inst.update_available:
+                continue
+            if not inst.origin:
+                continue
+            catalog_id = inst.origin.get("catalog_id")
+            catalog_app = next((a for a in self._catalog_apps if a.id == catalog_id), None)
+            if catalog_app is None:
+                continue
+            if inst.update_policy == "pinned":
+                continue
+            if inst.self_managed and not include_self_managed:
+                continue
+            method = "zsync" if catalog_app.raw.get("zsync_url") else "full"
+            updates.append(
+                UpdateInfo(
+                    app_key=f"{inst.source.value}:{inst.id}",
+                    installed_version=inst.version,
+                    new_version=catalog_app.version,
+                    size=catalog_app.raw.get("size"),
+                    method=method,
+                )
+            )
+
+        # Flatpak updates (CLI-based)
+        for upd in self._get_flatpak_updates():
+            inst = self._installed_apps.get(_flatpak_id_from_key(upd.app_key))
+            updates.append(
+                UpdateInfo(
+                    app_key=upd.app_key,
+                    installed_version=inst.version if inst else None,
+                    new_version=upd.new_version,
+                    size=None,
+                    method="flatpak",
+                )
+            )
+
+        return updates
+
+    # ------------------------------------------------------------------ update all
+
+    def _on_update_all_requested(self, app_ids: list[str]) -> None:
+        """Run the given auto-policy app updates sequentially in FIFO order."""
+        self._update_all_queue = list(app_ids)
+        self._update_all_active = True
+        self._process_next_update_all()
+
+    def _process_next_update_all(self) -> None:
+        """Start the next queued update-all item, or finish the batch."""
+        if not self._update_all_queue:
+            self._update_all_active = False
+            return
+        app_id = self._update_all_queue.pop(0)
+        app = next((a for a in self._catalog_apps if a.id == app_id), None)
+        inst = self._installed_apps.get(app_id)
+        if not app or not inst:
+            # Cannot start this one; report a failure and move on.
+            self._report_update_result(app_id, False, self.tr("App not available"))
+            return
+        # Skip if an operation is already running for this app (should not happen
+        # in sequential mode, but guard against duplicate-update refusals).
+        if any(op[2] == app_id for op in self._active_operations.values()):
+            self._report_update_result(app_id, False, self.tr("Already updating"))
+            return
+        self._on_update_requested(app_id)
+
+    def _report_update_result(self, app_id: str, success: bool, message: str) -> None:
+        """Forward a per-app update result to the Updates page and advance the queue."""
+        self._updates.set_result(app_id, success, message)
+        if self._update_all_active:
+            self._process_next_update_all()
 
     # ------------------------------------------------------------------ search
 
@@ -518,9 +862,12 @@ class MainWindow(QMainWindow):
             self._installed.set_apps(list(self._installed_apps.values()))
             self._sidebar.select_section(SECTION_INSTALLED)
         elif section == SECTION_UPDATES:
-            self._stack.setCurrentWidget(self._updates_placeholder)
+            self._updates.populate(self._collect_updates(), self._installed_apps)
+            self._stack.setCurrentWidget(self._updates)
             self._toolbar.set_title(self.tr("Updates"))
             self._sidebar.select_section(SECTION_UPDATES)
+        elif section == "source:flatpak":
+            self._show_flathub_section()
         elif section == SECTION_SETTINGS:
             dlg = SettingsDialog(self.paths, self.config, self)
             if dlg.exec():
@@ -528,6 +875,7 @@ class MainWindow(QMainWindow):
 
                 self.config = load(self.paths)
                 self._refresh_explore()
+                self._recompute_updates()
             self._sidebar.select_section(SECTION_EXPLORE)
         else:
             self._stack.setCurrentWidget(self._explore)
@@ -536,12 +884,64 @@ class MainWindow(QMainWindow):
             )
             self._sidebar.select_section(SECTION_EXPLORE)
 
+    def _show_flathub_section(self) -> None:
+        """Navigate to the Flathub section in the Explore page."""
+        self._sidebar.select_section("source:flatpak")
+        self._toolbar.set_title(self.tr("Flathub"))
+
+        if not self._flatpak_backend.available:
+            # R10.7: show empty state / banner explaining missing tool
+            self._stack.setCurrentWidget(self._explore)
+            self._explore.set_apps([])
+            self._show_banner(
+                self.tr(
+                    "Flatpak is not installed. Install flatpak to browse Flathub apps."
+                ),
+                kind="warning",
+            )
+            return
+
+        # Check if no Flathub remote is configured (R12.1)
+        if getattr(self, "_flathub_no_appstream", False) or not self._flathub_index.appstream_path.exists():
+            self._stack.setCurrentWidget(self._explore)
+            self._explore.set_apps([])
+            self._show_banner(
+                self.tr(
+                    "Flathub metadata not found. "
+                    "Run 'flatpak update --appstream --user' to download it."
+                ),
+                kind="info",
+            )
+            return
+
+        # Show all apps from the Flathub index via FlathubModel (R9.1)
+        self._stack.setCurrentWidget(self._explore)
+        # Build a page of apps from the index to populate the explore view.
+        from aurelis_software.ui.app_model import FlathubModel
+
+        try:
+            flathub_model = FlathubModel(self._flathub_index, parent=self)
+        except Exception:  # noqa: BLE001
+            self._explore.set_apps([])
+            self._show_banner(self.tr("Could not load Flathub catalog."), kind="error")
+            return
+        self._explore._view.setModel(flathub_model)
+        flathub_model.fetchMore(flathub_model.index(0, 0))
+        self._show_banner(
+            self.tr("Flathub — Refresh metadata"),
+            kind="info",
+        )
+
     def _on_selection_changed(self) -> None:
         app = self._explore.current_app()
         if app is None:
             return
         installed = self._installed_apps.get(app.id)
-        self._detail.set_app(app, installed.__dict__ if installed else None)
+        # Look up Flathub record for AppImages (R12.3 "Also available as")
+        flathub_record: dict | None = None
+        if app.source == Source.APPIMAGE:
+            flathub_record = self._flathub_index.get(app.id)
+        self._detail.set_app(app, installed.__dict__ if installed else None, flathub_record=flathub_record)
         self._stack.setCurrentWidget(self._detail)
         self._toolbar.set_title(app.name)
         self._hide_banner()
@@ -738,9 +1138,7 @@ class MainWindow(QMainWindow):
                     action_callback=lambda: self._on_undo_update(app.id),
                 )
             else:
-                show_toast(
-                    self.tr("{name} installed.").format(name=app.name), "success", self
-                )
+                show_toast(self.tr("{name} installed.").format(name=app.name), "success", self)
 
         def on_error(error: AurelisError) -> None:
             # Handle ConflictPending
@@ -818,9 +1216,7 @@ class MainWindow(QMainWindow):
             return
 
         # Check for existing update operation
-        if any(
-            op[1] == "update" and op[0].id == app_id for op in self._active_operations.values()
-        ):
+        if any(op[1] == "update" and op[0].id == app_id for op in self._active_operations.values()):
             return
 
         self._start_update(app, inst)
@@ -835,7 +1231,11 @@ class MainWindow(QMainWindow):
         # (badge must stay correct throughout the operation and after any failure)
         if inst.id not in self._installed_apps:
             self._installed_apps[inst.id] = inst
-        if inst.origin and inst.origin.get("catalog_id") and inst.id not in self._installed_by_catalog_id:
+        if (
+            inst.origin
+            and inst.origin.get("catalog_id")
+            and inst.id not in self._installed_by_catalog_id
+        ):
             self._installed_by_catalog_id[inst.id] = inst
 
         # Keep nam alive for the duration of the download
@@ -853,19 +1253,19 @@ class MainWindow(QMainWindow):
 
         def on_progress(received: int, total: int) -> None:
             fraction = received / total if total > 0 else None
-            self._detail.update_operation_progress(
-                op_id,
-                type("Event", (), {"step": "download", "fraction": fraction, "message": ""})(),
-            )
+            event = type("Event", (), {"step": "download", "fraction": fraction, "message": ""})()
+            self._detail.update_operation_progress(op_id, event)
+            self._updates.set_progress(app.id, event)
 
         def on_finished(path: Path) -> None:
             # Verify sha256 if present (fetch_update already does this, but double-check)
             sha256 = app.raw.get("sha256")
             if sha256:
-                self._detail.update_operation_progress(
-                    op_id,
-                    type("Event", (), {"step": "verify", "fraction": None, "message": ""})(),
-                )
+                verify_event = type(
+                    "Event", (), {"step": "verify", "fraction": None, "message": ""}
+                )()
+                self._detail.update_operation_progress(op_id, verify_event)
+                self._updates.set_progress(app.id, verify_event)
                 import hashlib
 
                 with open(path, "rb") as f:
@@ -879,15 +1279,17 @@ class MainWindow(QMainWindow):
                         self.tr("Checksum mismatch for {name}").format(name=app.name), "error", self
                     )
                     self._active_operations.pop(op_id, None)
+                    self._report_update_result(app.id, False, self.tr("Checksum mismatch"))
                     return
 
             # Handoff to daemon with Install (conflict=replace for update)
             # Emit handoff progress BEFORE the Install D-Bus call so the UI
             # transitions to the indeterminate "Finishing…" phase first (R1.3).
-            self._detail.update_operation_progress(
-                op_id,
-                type("Event", (), {"step": "handoff", "fraction": None, "message": self.tr("Finishing…")})(),
-            )
+            handoff_event = type(
+                "Event", (), {"step": "handoff", "fraction": None, "message": self.tr("Finishing…")}
+            )()
+            self._detail.update_operation_progress(op_id, handoff_event)
+            self._updates.set_progress(app.id, handoff_event)
 
             # Build origin with NEW version/sha256 so update_available becomes False
             origin = build_origin(app)
@@ -906,9 +1308,8 @@ class MainWindow(QMainWindow):
             self._active_operations.pop(op_id, None)
             self._update_nam_refs.pop(op_id, None)
             self._recompute_updates()
-            show_toast(
-                self.tr("Update failed: {error}").format(error=str(error)), "error", self
-            )
+            show_toast(self.tr("Update failed: {error}").format(error=str(error)), "error", self)
+            self._report_update_result(app.id, False, str(error))
 
         def _cleanup():
             self._update_nam_refs.pop(op_id, None)
@@ -964,6 +1365,8 @@ class MainWindow(QMainWindow):
             # callers checking _active_operations immediately after a D-Bus reply
             # (e.g. duplicate-update guards) see a consistent snapshot.
             QTimer.singleShot(0, lambda: self._active_operations.pop(op_id, None))
+            # Report the result to the Updates page (advances the update-all queue).
+            self._report_update_result(app.id, True, self.tr("Updated"))
             # Show success toast with Undo if previous version exists
             if previous:
                 show_toast(
@@ -974,9 +1377,7 @@ class MainWindow(QMainWindow):
                     action_callback=lambda: self._on_undo_update(app.id),
                 )
             else:
-                show_toast(
-                    self.tr("{name} updated.").format(name=app.name), "success", self
-                )
+                show_toast(self.tr("{name} updated.").format(name=app.name), "success", self)
 
         def on_error(error: Exception) -> None:
             # Clean up cache file
@@ -985,9 +1386,8 @@ class MainWindow(QMainWindow):
             self._detail.operation_failed(str(error), getattr(error, "details", ""), error_type)
             self._active_operations.pop(op_id, None)  # pop BEFORE recomputing badge
             self._recompute_updates()
-            show_toast(
-                self.tr("Update failed: {error}").format(error=str(error)), "error", self
-            )
+            show_toast(self.tr("Update failed: {error}").format(error=str(error)), "error", self)
+            self._report_update_result(app.id, False, str(error))
 
         self._appimage_backend.install_async(
             str(path), options, reply_cb=on_reply, error_cb=on_error
@@ -1000,6 +1400,7 @@ class MainWindow(QMainWindow):
             return
 
         if self._appimage_backend:
+
             def on_reply(ok: bool) -> None:
                 if ok:
                     show_toast(self.tr("Reverted {name}").format(name=inst.name), "success", self)
@@ -1116,17 +1517,18 @@ class MainWindow(QMainWindow):
                     self.tr("Update policy set to {policy}").format(policy=policy), "success", self
                 )
                 self._detail.set_app(self._detail.current_app, inst.__dict__)
+                self._recompute_updates()
 
-            def on_error(error: AurelisError) -> None:
-                show_toast(
-                    self.tr("Failed to set policy: {error}").format(error=error.message),
-                    "error",
-                    self,
-                )
-
-            self._appimage_backend.set_policy_async(
-                inst.id, policy, reply_cb=on_reply, error_cb=on_error
+        def on_error(error: AurelisError) -> None:
+            show_toast(
+                self.tr("Failed to set policy: {error}").format(error=error.message),
+                "error",
+                self,
             )
+
+        self._appimage_backend.set_policy_async(
+            inst.id, policy, reply_cb=on_reply, error_cb=on_error
+        )
 
     def _on_set_origin(self, app_id: str, origin: dict | None) -> None:
         inst = self._installed_apps.get(app_id)
@@ -1278,3 +1680,60 @@ class CatalogRefreshWorker(QThread):
         updater = DbUpdater(self.paths, self.config, url_fetch)
         result = updater.refresh(force=False)
         self.finished.emit(result)
+
+
+def _flatpak_id_from_key(app_key: str) -> str:
+    """Extract the app id from an app_key like 'flatpak:<id>'."""
+    return app_key.split(":", 1)[1] if ":" in app_key else app_key
+
+
+class _FlathubIndexWorker(QThread):
+    """Background thread that rebuilds the FlathubIndex without blocking the UI (R8.2)."""
+
+    rebuild_finished = pyqtSignal()
+    rebuild_failed = pyqtSignal(str)
+
+    def __init__(self, index: FlathubIndex, parent=None) -> None:
+        super().__init__(parent)
+        self._index = index
+
+    def run(self) -> None:
+        try:
+            self._index.rebuild()
+        except Exception as exc:  # noqa: BLE001 — keep the app alive on any rebuild error
+            self.rebuild_failed.emit(str(exc))
+            return
+        self.rebuild_finished.emit()
+
+
+class _FlatpakAppstreamWorker(QThread):
+    """Background thread that runs 'flatpak update --appstream --user' (R12.2).
+
+    Emits ``refresh_finished`` on success and ``refresh_failed(error)`` on failure.
+    The main window connects these signals to trigger a ``_FlathubIndexWorker`` rebuild
+    once the AppStream file has been updated.
+    """
+
+    refresh_finished = pyqtSignal()
+    refresh_failed = pyqtSignal(str)
+
+    def __init__(self, backend: FlatpakBackend, parent=None) -> None:
+        super().__init__(parent)
+        self._backend = backend
+
+    def run(self) -> None:
+        op = self._backend.refresh_appstream()
+        try:
+            op.start()
+            if op._work is not None:
+                op._work(op)
+        except Exception as exc:  # noqa: BLE001
+            self.refresh_failed.emit(str(exc))
+            return
+        # Check whether the Operation itself reported a failure via its result attribute.
+        result = getattr(op, "result", None)
+        if result is not None and not getattr(result, "ok", True):
+            error = getattr(result, "error", "unknown error")
+            self.refresh_failed.emit(str(error))
+            return
+        self.refresh_finished.emit()

@@ -10,7 +10,7 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
 
 ## Tasks
 
-- [ ] 1. Phase 4 — Fix two failing tests and complete AppImage updates
+- [x] 1. Phase 4 — Fix two failing tests and complete AppImage updates
   - [x] 1.1 Fix `_call_update_install.on_error`: pop `op_id` from `_active_operations` **before** calling `_recompute_updates()`
     - Locate `on_error` inside `_call_update_install` in `src/aurelis_software/ui/main_window.py`
     - Swap the order: `_active_operations.pop(op_id, None)` then `_recompute_updates()`
@@ -49,7 +49,7 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - **Property 2: zsync fallback** — for any entry, `fetch_update` returns a `.part` file regardless of zsync availability, as long as the download URL is reachable
     - **Validates: R3.1, R3.2**
 
-  - [ ] 1.8 Implement update flow in `main_window.py` (`_start_update`)
+  - [x] 1.8 Implement update flow in `main_window.py` (`_start_update`)
     - `_start_update(entry, installed)`: calls `fetch_update`, then `Install(newfile, {source_action:"move", conflict:"replace", silent:true, origin:build_origin(entry)})`
     - On success: emit toast with **Undo** button that calls `Revert(managed_name)`; show Undo only while `installed.previous` is non-empty; after Undo recompute badge
     - On failure at any stage: delete `.part` file, set detail page state to `"Failed"`, show Retry button, leave badge unchanged
@@ -59,7 +59,7 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - **Property 3: Origin version after update** — `build_origin(entry).version == entry.version` and `build_origin(entry).sha256 == entry.sha256` for all entries
     - **Validates: R4.1, R2.3**
 
-  - [ ] 1.10 Create `ui/updates_page.py`
+  - [x] 1.10 Create `ui/updates_page.py`
     - `UpdatesPage(QWidget)` with `populate(updates, installed)`, `set_progress(app_key, event)`, `set_result(app_key, success, message)`
     - Rows grouped by source; each row: checkbox, icon, name, version arrow, source badge, inline progress bar (hidden until running), **Update** button
     - **Update all** at top: runs only `auto`-policy rows in FIFO order through the operation queue
@@ -68,13 +68,13 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - Wire `updates_requested` signal from sidebar to show this page; wire `update_requested(app_key)` to `_on_update_requested`
     - _Requirements: R5.1, R5.2, R5.3, R5.4_
 
-  - [ ] 1.11 Add policy selector to `detail_page.py`
+  - [x] 1.11 Add policy selector to `detail_page.py`
     - Add a `QComboBox` (Automatic / Ask me / Pinned) below the action buttons; visible only for installed AppImages
     - On change, call `backend.set_policy(installed.managed_name, policy)`; recompute updates
     - "Include self-updating apps" setting in `settings_dialog.py` wires to `updates.include_self_managed`; on change triggers `_recompute_updates()`
     - _Requirements: R6.1, R6.2_
 
-  - [ ] 1.12 Implement update notifications
+  - [x] 1.12 Implement update notifications
     - After each `_recompute_updates()`, if the new count exceeds the previous count and `config["updates"]["notify"]` is `True` (default `False`), send a notification via `QDBusMessage` to `org.freedesktop.Notifications`
     - Exclude `manual`, `pinned`, and `self_managed` apps from the notification count
     - Add "Notify about updates" checkbox to `settings_dialog.py`
@@ -85,14 +85,14 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - `test_p45_policy.py`: policy selector visible for installed AppImage; calls `SetPolicy` with correct value; recompute triggered on setting change; `self_managed` excluded/included based on setting
     - _Requirements: R5.1–R5.4, R6.1, R6.2_
 
-  - [ ] 1.14 Phase 4 checkpoint — run `./check` and confirm all tests pass
+  - [x] 1.14 Phase 4 checkpoint — run `./check` and confirm all tests pass
     - Run `./check` (ruff + pytest); paste the real output
     - Verify 0 failures; list any skipped tests
     - **Stop here for owner review before starting Phase 5**
 
 - [ ] 2. Phase 5 — Flathub section
 
-  - [ ] 2.1 Create `core/pacman_parser.py` — no, create `services/flathub_index.py`
+  - [x] 2.1 Create `core/pacman_parser.py` — no, create `services/flathub_index.py`
     - `FlathubIndex(db_path, appstream_path, locale)` backed by `sqlite3`
     - SQLite schema: `apps` table (id, name, summary, version, icon_name, categories JSON, raw JSON) + `apps_fts` FTS5 virtual table (id UNINDEXED, name, summary, keywords)
     - `needs_rebuild()` compares stored appstream mtime with current file mtime
@@ -107,7 +107,7 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - Test: needs_rebuild True when file is newer; rebuild populates FTS; search returns ranked results; locale fallback; rebuild is idempotent (runs twice, same result); no entries loaded into RAM beyond the page
     - _Requirements: R8.1, R8.3, R8.4_
 
-  - [ ] 2.3 Create `backends/flatpak.py`
+  - [x] 2.3 Create `backends/flatpak.py`
     - `FlatpakBackend(runner)` implementing `Backend` for `Source.FLATPAK`
     - Define command lists as module-level constants (no shell strings)
     - `available` property: check `flatpak` on PATH; False if missing
@@ -127,13 +127,13 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - Test: `list_installed` parses correctly; `list_updates` returns `UpdateInfo` objects; `install` emits correct events; `remove` emits correct events; `available=False` when flatpak missing; "Add Flathub" command issued correctly
     - _Requirements: R10.1–R10.7, R12.1_
 
-  - [ ] 2.6 Add paginated `FlathubModel` to `ui/app_model.py`
+  - [x] 2.6 Add paginated `FlathubModel` to `ui/app_model.py`
     - `FlathubModel(QAbstractListModel)` with `canFetchMore(parent)`/`fetchMore(parent)` using `FlathubIndex.search(query, limit=48, offset=len(self._rows))`
     - Expose same roles as the existing `AppModel` so `AppCardDelegate` renders without changes
     - Connect to the existing search bar via the same proxy interface
     - _Requirements: R9.1, R9.2_
 
-  - [ ] 2.7 Wire Flathub into the sidebar, Installed page, and Updates page
+  - [-] 2.7 Wire Flathub into the sidebar, Installed page, and Updates page
     - Add Flathub sidebar section and category sub-list; show "Flathub not available" empty state when `available=False`
     - `_refresh_installed()` aggregates Flatpak results alongside AppImage results
     - `_recompute_updates()` includes Flatpak update entries

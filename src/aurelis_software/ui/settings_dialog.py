@@ -68,6 +68,9 @@ class SettingsDialog(QDialog):
         self.include_self_managed = QCheckBox(self.tr("Include self-updating apps in Updates"))
         self.include_self_managed.setChecked(bool(self.config.get("updates.include_self_managed")))
         ui_layout.addWidget(self.include_self_managed)
+        self.notify_updates = QCheckBox(self.tr("Notify about updates"))
+        self.notify_updates.setChecked(bool(self.config.get("updates.notify")))
+        ui_layout.addWidget(self.notify_updates)
         layout.addWidget(ui_box)
 
         buttons = QDialogButtonBox(
@@ -88,5 +91,6 @@ class SettingsDialog(QDialog):
         data.setdefault("updates", {})["include_self_managed"] = (
             self.include_self_managed.isChecked()
         )
+        data["updates"]["notify"] = self.notify_updates.isChecked()
         save(self.paths, Config(data))
         self.accept()

@@ -7,6 +7,7 @@ from pathlib import Path
 from PyQt6.QtCore import QSize, Qt, pyqtSignal
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -74,12 +75,13 @@ class DetailPage(QWidget):
         self.icons_dir = icons_dir
         self._app: App | None = None
         self._installed: dict | None = None  # InstalledApp-like dict
+        self._flathub_record: dict | None = None  # FlathubIndex record if available
         self._state: str = "NotInstalled"  # matches section 7.1 states
         self._current_op_id: str | None = None
         self._current_op_kind: str | None = None
         self._action_button: QPushButton | None = None
         self._secondary_button: QPushButton | None = None
-        self._policy_button: QPushButton | None = None
+        self._policy_combo: QComboBox | None = None
         self._revert_button: QPushButton | None = None
         self._show_folder_button: QPushButton | None = None
         self._link_button: QPushButton | None = None
@@ -134,16 +136,18 @@ class DetailPage(QWidget):
         """The op_id of the currently running operation, or None."""
         return self._current_op_id
 
-    def set_app(self, app: App | None, installed: dict | None = None) -> None:
+    def set_app(self, app: App | None, installed: dict | None = None, flathub_record: dict | None = None) -> None:
         """Set the app and optionally its installed state.
 
         Args:
             app: Catalog App entry
             installed: Dict with keys like id, version, managed_name, path,
                       update_policy, self_managed, origin, previous, locked, pending
+            flathub_record: FlathubIndex record dict if the same app id is on Flathub
         """
         self._app = app
         self._installed = installed
+        self._flathub_record = flathub_record
         # Clear Failed state so _update_state recomputes from installed dict
         if self._state == "Failed" and self._current_op_id is None:
             self._state = "NotInstalled"
@@ -906,28 +910,76 @@ class DetailPage(QWidget):
     # ------------------------------------------------------------------ also available as
 
     def _also_available_as(self, app: App) -> None:
+        """Show 'Also on Flathub' button when the same app id exists in the Flathub index."""
+        flathub = self._flathub_record
+        if not flathub:
+            return
         self._layout.addWidget(_section_title(self.tr("Also available as")))
         self._layout.addSpacing(8)
-        placeholder = QLabel(self.tr("(other sources with the same id appear here)"))
-        placeholder.setStyleSheet("color: #86868b; font-size: 13px; font-style: italic;")
-        self._layout.addWidget(placeholder)
+        row = QHBoxLayout()
+        row.setSpacing(10)
+        row.setContentsMargins(0, 0, 0, 0)
+        flatpak_name = flathub.get("name") or app.id
+        label = QLabel(self.tr("This app is also available as a Flatpak on Flathub."))
+        label.setWordWrap(True)
+        label.setStyleSheet("color: #1d1d1f; font-size: 13px;")
+        row.addWidget(label, stretch=1)
+        btn = QPushButton(self.tr("Also on Flathub"))
+        btn.setAccessibleName(self.tr("View {name} on Flathub").format(name=flatpak_name))
+        btn.setFixedHeight(32)
+        btn.setStyleSheet(
+            "QPushButton {"
+            "  background: transparent; color: #0071e3; border: 1px solid #0071e3;"
+            "  border-radius: 8px; font-size: 13px; font-weight: 600; padding: 0 14px;"
+            "}"
+            "QPushButton:hover { background: rgba(0,113,227,0.08); }"
+        )
+        row.addWidget(btn)
+        self._layout.addLayout(row)
+        self._layout.addSpacing(12)
+        self._layout.addWidget(_divider())
+        self._layout.addSpacing(16)
 
     # ------------------------------------------------------------------ installed actions
 
     def _installed_actions(self, app: App) -> None:
-        """Show policy selector, revert button for installed apps."""
+        """Show policy selector (AppImages only), revert button for installed apps."""
         self._layout.addWidget(_section_title(self.tr("Manage")))
         self._layout.addSpacing(8)
 
-        # Policy selector
-        policy = self._installed.get("update_policy", "auto") if self._installed else "auto"
-        self._policy_button = self._make_button(
-            self.tr("Update policy: {policy}").format(policy=policy.capitalize()),
-            "#0071e3",
-            self._on_policy_clicked,
-            style="outline",
-        )
-        self._layout.addWidget(self._policy_button)
+        # Policy selector — only for installed AppImages (R6.1)
+        if app.source == Source.APPIMAGE and self._installed:
+            policy_row = QHBoxLayout()
+            policy_row.setSpacing(8)
+            policy_row.setContentsMargins(0, 0, 0, 0)
+
+            policy_label = QLabel(self.tr("Update policy:"))
+            policy_label.setStyleSheet("color: #1d1d1f; font-size: 13px;")
+            policy_row.addWidget(policy_label)
+
+            self._policy_combo = QComboBox()
+            self._policy_combo.setAccessibleName(self.tr("Update policy"))
+            # Internal values map to display labels
+            _policy_items = [
+                ("auto", self.tr("Automatic")),
+                ("manual", self.tr("Ask me")),
+                ("pinned", self.tr("Pinned")),
+            ]
+            for value, label in _policy_items:
+                self._policy_combo.addItem(label, userData=value)
+
+            current_policy = self._installed.get("update_policy", "auto")
+            for i in range(self._policy_combo.count()):
+                if self._policy_combo.itemData(i) == current_policy:
+                    self._policy_combo.setCurrentIndex(i)
+                    break
+
+            self._policy_combo.currentIndexChanged.connect(self._on_policy_combo_changed)
+            policy_row.addWidget(self._policy_combo)
+            policy_row.addStretch()
+            self._layout.addLayout(policy_row)
+        else:
+            self._policy_combo = None
 
         # Revert button
         if self._installed and self._installed.get("previous"):
@@ -950,13 +1002,12 @@ class DetailPage(QWidget):
         self._layout.addWidget(_divider())
         self._layout.addSpacing(16)
 
-    def _on_policy_clicked(self) -> None:
-        if self._installed:
-            current = self._installed.get("update_policy", "auto")
-            policies = ["auto", "manual", "pinned"]
-            idx = policies.index(current) if current in policies else 0
-            next_policy = policies[(idx + 1) % len(policies)]
-            self.set_policy_requested.emit(self._installed["id"], next_policy)
+    def _on_policy_combo_changed(self, index: int) -> None:
+        """Emit set_policy_requested when the combo selection changes."""
+        if self._installed and self._policy_combo is not None:
+            new_policy = self._policy_combo.itemData(index)
+            if new_policy and new_policy != self._installed.get("update_policy", "auto"):
+                self.set_policy_requested.emit(self._installed["id"], new_policy)
 
     def _on_revert_clicked(self) -> None:
         if self._installed:
