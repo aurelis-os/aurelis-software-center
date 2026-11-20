@@ -1,0 +1,31 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Create PacmanIndex (services/pacman_index.py) following the FlathubIndex pattern exactly. Sqlite3 + FTS5 backed index with packages table, packages_fts virtual table, and meta table. Schema: packages(name TEXT PRIMARY KEY, version TEXT, description TEXT, repo TEXT, groups TEXT, installed_size TEXT, download_size TEXT, url TEXT, license TEXT, depends TEXT, raw TEXT). needs_rebuild() compares stored max-mtime of sync_dir/*.db files. rebuild(runner, progress_cb) runs ['pacman', '-Si'] via runner, parses with pacman_parser.parse_si_output, inserts in batches of 100, calls progress_cb every 100 entries. search(query, limit, offset) uses FTS5 prefix-AND query (_fts_query helper). get(name) returns single record or None. Add paths.py properties: pacman_db, pacman_sync_dir. Add tests/services/test_pacman_index.py with tests for needs_rebuild, rebuild, search, get, and idempotent rebuild.",
+  "status": "completed",
+  "steps": [
+    "Add pacman_db and pacman_sync_dir properties to src/aurelis_software/core/paths.py following the flathub_db pattern. pacman_db = self.cache_dir / 'aurelis-software' / 'pacman_index.db', pacman_sync_dir = Path('/var/lib/pacman/sync').",
+    "Create src/aurelis_software/services/pacman_index.py with PacmanIndex class. __init__(db_path, sync_dir, runner=None). Schema: CREATE TABLE packages(name TEXT PRIMARY KEY, version TEXT, description TEXT, repo TEXT, groups TEXT, installed_size TEXT, download_size TEXT, url TEXT, license TEXT, depends TEXT, raw TEXT); CREATE VIRTUAL TABLE packages_fts USING fts5(name, description); CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT).",
+    "Implement needs_rebuild() method: return True if db missing, schema version changed, or max mtime of sync_dir/*.db files differs from stored meta.max_sync_mtime. Handle missing sync_dir gracefully (return False).",
+    "Implement rebuild(runner, progress_cb) method: call runner(['pacman', '-Si']), parse stdout with pacman_parser.parse_si_output, insert in batches of 100 into packages and packages_fts, call progress_cb(fraction) every 100 entries, store max mtime of sync_dir/*.db in meta.max_sync_mtime. Whole operation in one transaction. Use _default_runner = lambda cmd: subprocess.run(cmd, capture_output=True, text=True, check=False) -> (returncode, stdout, stderr) if runner is None.",
+    "Implement search(query, limit, offset) method: use _fts_query(query) helper (same as FlathubIndex) to build FTS5 prefix-AND match expression, SELECT from packages_fts JOIN packages, ORDER BY rank, LIMIT/OFFSET, return list[dict].",
+    "Implement get(name) method: SELECT from packages WHERE name=?, return dict or None.",
+    "Implement categories() method: return [] (pacman has groups, not categories; skip or return empty list).",
+    "Create tests/services/test_pacman_index.py with FakeRunner class (same pattern as FlatpakBackend tests). test_needs_rebuild_true_when_db_missing, test_needs_rebuild_false_when_mtime_unchanged, test_rebuild_creates_tables, test_rebuild_inserts_parsed_packages, test_rebuild_calls_progress_cb, test_search_returns_fts_results, test_get_returns_single_record, test_rebuild_idempotent (run twice, count unchanged)."
+  ],
+  "acceptance_criteria": [
+    "PacmanIndex.needs_rebuild() correctly detects missing db or changed sync_dir mtime",
+    "PacmanIndex.rebuild() parses pacman -Si output and populates sqlite with FTS5 index",
+    "PacmanIndex.search() returns FTS5-ranked results with pagination",
+    "PacmanIndex.get() returns a single package dict by name",
+    "rebuild() is idempotent (running twice produces same result)",
+    "paths.py has pacman_db and pacman_sync_dir properties",
+    "All PacmanIndex tests pass"
+  ],
+  "verification": [
+    "Run pytest tests/services/test_pacman_index.py -v and confirm all tests pass",
+    "Run ./check and confirm 0 ruff violations and all tests pass"
+  ],
+  "blocked_reason": null,
+  "findings": "All acceptance criteria met. PacmanIndex implemented following FlathubIndex pattern exactly. Sqlite3 + FTS5 with packages table (name, version, description, repo, groups, installed_size, download_size, url, license, depends, raw), packages_fts virtual table (name, description), and meta table for tracking. needs_rebuild() compares stored max-mtime of sync_dir/*.db files and returns False when sync_dir is missing. rebuild() runs pacman -Si via runner, parses with pacman_parser.parse_si_output, inserts in batches of 100, calls progress_cb every 100 entries. search() uses _fts_query helper for safe FTS5 prefix-AND queries with pagination. get() returns single package dict or None. categories() returns empty list. Added paths.py properties: pacman_db = cache_dir/aurelis-software/pacman_index.db, pacman_sync_dir = /var/lib/pacman/sync. Comprehensive test suite with 18 tests covering needs_rebuild, rebuild, search, get, idempotent rebuild, missing db/sync_dir handling. Refactored to reduce complexity (extracted helper methods). All 328 tests pass with 0 ruff violations."
+}

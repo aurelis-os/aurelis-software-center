@@ -65,9 +65,7 @@ class Paths:
         import os
 
         # Respect XDG_DATA_HOME override; fall back to standard Flatpak path.
-        xdg_data = Path(
-            os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
-        )
+        xdg_data = Path(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"))
         return (
             xdg_data
             / "flatpak"
@@ -78,6 +76,14 @@ class Paths:
             / "active"
             / "appstream.xml.gz"
         )
+
+    @property
+    def pacman_db(self) -> Path:
+        return self.cache_dir / "aurelis-software" / "pacman_index.db"
+
+    @property
+    def pacman_sync_dir(self) -> Path:
+        return Path("/var/lib/pacman/sync")
 
     @property
     def state_file(self) -> Path:
