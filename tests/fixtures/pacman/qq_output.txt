@@ -1,0 +1,15 @@
+alsa-utils
+bash
+bzip2
+coreutils
+expat
+firefox
+gdbm
+gimp
+gtk3
+htop
+libffi
+python
+systemd
+vim
+xz

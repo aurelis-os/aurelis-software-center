@@ -1,0 +1,87 @@
+Name            : htop
+Version         : 3.3.0-1
+Description     : Interactive process viewer
+Architecture    : x86_64
+URL             : https://htop.dev/
+Licenses        : GPL-2.0-or-later
+Groups          : None
+Provides        : None
+Depends On      : libncursesw.so=6-64
+Optional Deps   : lsof: show files opened by a process [installed]  strace: attach to a running process
+Required By     : None
+Optional For    : None
+Conflicts With  : None
+Replaces        : None
+Installed Size  : 329.59 KiB
+Packager        : Christian Hesse <eworm@archlinux.org>
+Build Date      : Mon 23 Oct 2023 10:15:42 AM UTC
+Install Date    : Wed 10 Jan 2024 02:34:15 PM UTC
+Install Reason  : Explicitly installed
+Install Script  : No
+Validated By    : Signature
+
+Name            : vim
+Version         : 9.0.2190-1
+Description     : Vi Improved, a highly configurable, improved version of the vi text editor
+Architecture    : x86_64
+URL             : https://www.vim.org
+Licenses        : custom:vim
+Groups          : None
+Provides        : xxd  vim-minimal  vim-python
+Depends On      : vim-runtime=9.0.2190-1  gpm  acl  glibc  libgcrypt  pcre2  zlib  libffi
+Optional Deps   : python: Python language support [installed]  ruby: Ruby language support  lua: Lua language support [installed]
+Required By     : neovim
+Optional For    : git
+Conflicts With  : gvim  vim-minimal  vim-python
+Replaces        : vim-python  vim-minimal
+Installed Size  : 4.23 MiB
+Packager        : Levente Polyak <anthraxx@archlinux.org>
+Build Date      : Tue 14 Nov 2023 02:45:18 PM UTC
+Install Date    : Wed 10 Jan 2024 03:12:08 PM UTC
+Install Reason  : Explicitly installed
+Install Script  : No
+Validated By    : Signature
+
+Name            : firefox
+Version         : 120.0.1-1
+Description     : Standalone web browser from mozilla.org
+Architecture    : x86_64
+URL             : https://www.mozilla.org/firefox/
+Licenses        : MPL-2.0
+Groups          : None
+Provides        : None
+Depends On      : dbus  ffmpeg  gtk3  libpulse  libxcomposite  libxdamage  libxt  mime-types  nss  ttf-font
+Optional Deps   : hunspell-en_US: Spell checking, American English  libnotify: Notification integration [installed]
+Required By     : plasma-browser-integration
+Optional For    : None
+Conflicts With  : None
+Replaces        : None
+Installed Size  : 224.18 MiB
+Packager        : Jan Alexander Steffens (heftig) <heftig@archlinux.org>
+Build Date      : Fri 15 Dec 2023 08:30:25 AM UTC
+Install Date    : Sat 13 Jan 2024 11:45:22 AM UTC
+Install Reason  : Explicitly installed
+Install Script  : Yes
+Validated By    : Signature
+
+Name            : python
+Version         : 3.12.1-1
+Description     : The Python programming language
+Architecture    : x86_64
+URL             : https://www.python.org/
+Licenses        : PSF-2.0
+Groups          : None
+Provides        : python3  python-externally-managed
+Depends On      : bzip2  expat  gdbm  libffi  libnsl  libxcrypt  openssl  zlib  tzdata  mpdecimal
+Optional Deps   : python-setuptools: for building Python packages [installed]  python-pip: for installing Python packages [installed]  sqlite: for sqlite3 module [installed]
+Required By     : alsa-utils  gtk-update-icon-cache  vim
+Optional For    : systemd
+Conflicts With  : python3
+Replaces        : python3
+Installed Size  : 88.45 MiB
+Packager        : Angel Velasquez <angvp@archlinux.org>
+Build Date      : Thu 07 Dec 2023 10:23:14 AM UTC
+Install Date    : Wed 03 Jan 2024 09:18:33 AM UTC
+Install Reason  : Installed as a dependency for another package
+Install Script  : No
+Validated By    : Signature

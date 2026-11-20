@@ -1,0 +1,113 @@
+Repository      : extra
+Name            : htop
+Version         : 3.3.0-1
+Description     : Interactive process viewer
+Architecture    : x86_64
+URL             : https://htop.dev/
+Licenses        : GPL-2.0-or-later
+Groups          : None
+Provides        : None
+Depends On      : libncursesw.so=6-64
+Optional Deps   : lsof: show files opened by a process  strace: attach to a running process
+Conflicts With  : None
+Replaces        : None
+Download Size   : 141.23 KiB
+Installed Size  : 329.59 KiB
+Packager        : Christian Hesse <eworm@archlinux.org>
+Build Date      : Mon 23 Oct 2023 10:15:42 AM UTC
+Validated By    : MD5 Sum  SHA-256 Sum  Signature
+
+Repository      : extra
+Name            : vim
+Version         : 9.0.2190-1
+Description     : Vi Improved, a highly configurable, improved version of the vi text editor
+Architecture    : x86_64
+URL             : https://www.vim.org
+Licenses        : custom:vim
+Groups          : None
+Provides        : xxd  vim-minimal  vim-python
+Depends On      : vim-runtime=9.0.2190-1  gpm  acl  glibc  libgcrypt  pcre2  zlib  libffi
+Optional Deps   : python: Python language support  ruby: Ruby language support  lua: Lua language support
+Conflicts With  : gvim  vim-minimal  vim-python
+Replaces        : vim-python  vim-minimal
+Download Size   : 1.82 MiB
+Installed Size  : 4.23 MiB
+Packager        : Levente Polyak <anthraxx@archlinux.org>
+Build Date      : Tue 14 Nov 2023 02:45:18 PM UTC
+Validated By    : MD5 Sum  SHA-256 Sum  Signature
+
+Repository      : core
+Name            : firefox
+Version         : 120.0.1-1
+Description     : Standalone web browser from mozilla.org
+Architecture    : x86_64
+URL             : https://www.mozilla.org/firefox/
+Licenses        : MPL-2.0
+Groups          : None
+Provides        : None
+Depends On      : dbus  ffmpeg  gtk3  libpulse  libxcomposite  libxdamage  libxt  mime-types  nss  ttf-font
+Optional Deps   : hunspell-en_US: Spell checking, American English  libnotify: Notification integration
+Conflicts With  : None
+Replaces        : None
+Download Size   : 62.45 MiB
+Installed Size  : 224.18 MiB
+Packager        : Jan Alexander Steffens (heftig) <heftig@archlinux.org>
+Build Date      : Fri 15 Dec 2023 08:30:25 AM UTC
+Validated By    : MD5 Sum  SHA-256 Sum  Signature
+
+Repository      : extra
+Name            : gimp
+Version         : 2.10.36-1
+Description     : GNU Image Manipulation Program
+Architecture    : x86_64
+URL             : https://www.gimp.org/
+Licenses        : GPL-3.0-or-later  LGPL-3.0-or-later
+Groups          : None
+Provides        : None
+Depends On      : babl  dbus-glib  desktop-file-utils  gegl  glib-networking  hicolor-icon-theme  openjpeg2  lcms2  libheif  libmng  librsvg  libwebp  libwmf  libxmu  libxpm  mypaint-brushes1  openexr  poppler-data  gtk2
+Optional Deps   : alsa-lib: for MIDI event controller module  ghostscript: for postscript support  gutenprint: for sophisticated printing
+Conflicts With  : None
+Replaces        : None
+Download Size   : 20.47 MiB
+Installed Size  : 123.56 MiB
+Packager        : Sven-Hendrik Haase <svenstaro@archlinux.org>
+Build Date      : Wed 20 Dec 2023 03:12:47 PM UTC
+Validated By    : MD5 Sum  SHA-256 Sum  Signature
+
+Repository      : extra
+Name            : python
+Version         : 3.12.1-1
+Description     : The Python programming language
+Architecture    : x86_64
+URL             : https://www.python.org/
+Licenses        : PSF-2.0
+Groups          : None
+Provides        : python3  python-externally-managed
+Depends On      : bzip2  expat  gdbm  libffi  libnsl  libxcrypt  openssl  zlib  tzdata  mpdecimal
+Optional Deps   : python-setuptools: for building Python packages  python-pip: for installing Python packages  sqlite: for sqlite3 module
+Conflicts With  : python3
+Replaces        : python3
+Download Size   : 14.82 MiB
+Installed Size  : 88.45 MiB
+Packager        : Angel Velasquez <angvp@archlinux.org>
+Build Date      : Thu 07 Dec 2023 10:23:14 AM UTC
+Validated By    : MD5 Sum  SHA-256 Sum  Signature
+
+Repository      : extra
+Name            : bash
+Version         : 5.2.021-1
+Description     : The GNU Bourne Again shell
+Architecture    : x86_64
+URL             : https://www.gnu.org/software/bash/bash.html
+Licenses        : GPL-3.0-or-later
+Groups          : base
+Provides        : sh
+Depends On      : readline  libreadline.so=8-64  glibc  ncurses
+Optional Deps   : bash-completion: for tab completion
+Conflicts With  : None
+Replaces        : None
+Download Size   : 1.72 MiB
+Installed Size  : 7.84 MiB
+Packager        : Giancarlo Razzolini <grazzolini@archlinux.org>
+Build Date      : Mon 04 Dec 2023 09:14:32 AM UTC
+Validated By    : MD5 Sum  SHA-256 Sum  Signature
