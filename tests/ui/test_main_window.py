@@ -11,11 +11,12 @@ import subprocess
 import threading
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from PyQt6.QtDBus import QDBusConnection
 from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication
+from PyQt6.QtWidgets import QApplication, QMessageBox
 
 from aurelis_software.backends.appimage import AppImageBackend
 from aurelis_software.core.config import Config
@@ -508,7 +509,8 @@ def test_apps_changed_debounce_moves_detail_to_update_available(
     window._catalog_apps = [kate]
     window._catalog_loaded = True
 
-    # Simulate post-install: Kate installed at older version, origin linked → "Installed".
+    # Simulate post-install: Kate installed at older version, origin linked with version → "Installed".
+    # Origin records the version at install time (26.08.2), so catalog version 26.08.3 triggers update.
     inst = InstalledApp(
         id="org.kde.kate",
         source=Source.APPIMAGE,
@@ -520,7 +522,7 @@ def test_apps_changed_debounce_moves_detail_to_update_available(
         sha256=None,
         update_policy="auto",
         self_managed=False,
-        origin={"catalog_id": "org.kde.kate"},
+        origin={"catalog_id": "org.kde.kate", "version": "26.08.2"},
         locked=False,
         pending=None,
         previous=(),
@@ -533,10 +535,8 @@ def test_apps_changed_debounce_moves_detail_to_update_available(
     assert window._detail._state == "Installed"
 
     # Script List to return the app at the same installed version.
-    # _process_installed_list preserves the existing origin, then
-    # _match_and_update_installed sees origin.catalog_id == kate.id and
-    # update_available() returns True because kate.version (26.08.3) !=
-    # origin.get("version") (None — origin has no version key).
+    # _process_installed_list preserves the existing origin (with version 26.08.2),
+    # update_available() returns True because kate.version (26.08.3) != origin.version (26.08.2).
     _fake_manager.script["List"] = [["org.kde.kate", "Kate", "26.08.2"]]
 
     # Subscribe to AppsChanged so _on_apps_changed fires.
@@ -551,3 +551,259 @@ def test_apps_changed_debounce_moves_detail_to_update_available(
     assert window._detail._state == "UpdateAvailable", (
         f"Expected 'UpdateAvailable', got {window._detail._state!r}"
     )
+
+
+# ── Update badge count tests (P4.1) ───────────────────────────────────────────
+# These tests trigger real events (catalog refresh, install, remove) via the
+# fake daemon and assert the sidebar badge updates through the real code paths.
+
+
+def test_updates_badge_after_catalog_refresh(qtbot, tmp_path, _dbus_bus, _fake_manager):
+    """Updates badge count should update after catalog refresh via real handler."""
+    # Create catalog with two apps: one newer, one same version
+    kate = App(
+        key="appimage:org.kde.kate",
+        id="org.kde.kate",
+        source=Source.APPIMAGE,
+        name="Kate",
+        summary="Text editor",
+        version="26.08.3",
+        raw={"sha256": "abc123"},
+    )
+    gimp = App(
+        key="appimage:org.gimp.gimp",
+        id="org.gimp.gimp",
+        source=Source.APPIMAGE,
+        name="GIMP",
+        summary="Image editor",
+        version="2.10.38",
+        raw={"sha256": "def456"},
+    )
+
+    window = _make_window_with_dbus(qtbot, tmp_path, _dbus_bus)
+    window._catalog_apps = [kate, gimp]
+    window._catalog_loaded = True
+
+    # Initially no installed apps, badge should be 0
+    assert window._sidebar._updates_count == 0
+
+    # Install Kate at older version (origin has version 26.08.2)
+    inst_kate = InstalledApp(
+        id="org.kde.kate",
+        source=Source.APPIMAGE,
+        name="Kate",
+        version="26.08.2",
+        managed_name="org.kde.kate",
+        path=None,
+        role="primary",
+        sha256=None,
+        update_policy="auto",
+        self_managed=False,
+        origin={"catalog_id": "org.kde.kate", "version": "26.08.2"},
+        locked=False,
+        pending=None,
+        previous=(),
+    )
+    # Install GIMP at same version (no update)
+    inst_gimp = InstalledApp(
+        id="org.gimp.gimp",
+        source=Source.APPIMAGE,
+        name="GIMP",
+        version="2.10.38",
+        managed_name="org.gimp.gimp",
+        path=None,
+        role="primary",
+        sha256=None,
+        update_policy="auto",
+        self_managed=False,
+        origin={"catalog_id": "org.gimp.gimp", "version": "2.10.38"},
+        locked=False,
+        pending=None,
+        previous=(),
+    )
+    window._installed_apps["org.kde.kate"] = inst_kate
+    window._installed_apps["org.gimp.gimp"] = inst_gimp
+    window._installed_by_catalog_id["org.kde.kate"] = inst_kate
+    window._installed_by_catalog_id["org.gimp.gimp"] = inst_gimp
+
+    # Set up fake manager's List to return the installed apps
+    _fake_manager.script["List"] = [
+        ["org.kde.kate", "Kate", "26.08.2"],
+        ["org.gimp.gimp", "GIMP", "2.10.38"],
+    ]
+
+    # Simulate catalog refresh by calling the refresh finished handler directly
+    from aurelis_software.services.db_updater import RefreshResult
+
+    # Create a mock result with changed catalog
+    new_catalog = type("Catalog", (), {"apps": [kate, gimp]})()
+    result = RefreshResult(changed=True, catalog=new_catalog, error=None)
+    window._on_refresh_finished(result)
+
+    # Wait for the async List callback to complete and _recompute_updates to run
+    QTest.qWait(200)
+    QApplication.processEvents()
+
+    # Badge should show 1 (only Kate has update)
+    assert window._sidebar._updates_count == 1
+
+
+def test_updates_badge_after_install(qtbot, tmp_path, _dbus_bus, _fake_manager, qapp_session):
+    """Updates badge count should update after an install via fake daemon on_reply."""
+    kate = App(
+        key="appimage:org.kde.kate",
+        id="org.kde.kate",
+        source=Source.APPIMAGE,
+        name="Kate",
+        summary="Text editor",
+        version="26.08.3",
+        raw={"sha256": "abc123"},
+    )
+
+    window = _make_window_with_dbus(qtbot, tmp_path, _dbus_bus)
+    window._catalog_apps = [kate]
+    window._catalog_loaded = True
+
+    # Initially no installed apps
+    assert window._sidebar._updates_count == 0
+
+    # Set up fake daemon List response to include the installed app after install
+    _fake_manager.script["List"] = [["org.kde.kate", "Kate", "26.08.3"]]
+
+    window.show()
+    qtbot.waitExposed(window)
+
+    # Set up detail page to show Kate (required for _call_install to update state)
+    window._detail.set_app(kate)
+    window._stack.setCurrentWidget(window._detail)
+    window._sidebar.select_section("explore")
+
+    # Install Kate via _call_install against the fake daemon
+    fake_path = window.paths.cache_dir / "downloads" / "kate-fake.AppImage"
+    fake_path.parent.mkdir(parents=True, exist_ok=True)
+    fake_path.write_bytes(b"fake appimage")
+
+    window._call_install(
+        kate,
+        fake_path,
+        {"source_action": "move", "conflict": "error", "silent": True, "origin": {}},
+    )
+
+    # Wait for the install to complete and detail state to become "Installed"
+    def _installed():
+        qapp_session.processEvents()
+        return window._detail._state == "Installed"
+
+    qtbot.waitUntil(_installed, timeout=5000)
+
+    # Badge should show 0 initially (same version in origin and catalog)
+    assert window._sidebar._updates_count == 0
+
+    # Now simulate catalog refresh with newer version (26.08.4)
+    kate_new = App(
+        key="appimage:org.kde.kate",
+        id="org.kde.kate",
+        source=Source.APPIMAGE,
+        name="Kate",
+        summary="Text editor",
+        version="26.08.4",
+        raw={"sha256": "abc123"},
+    )
+
+    from aurelis_software.services.db_updater import RefreshResult
+
+    new_catalog = type("Catalog", (), {"apps": [kate_new]})()
+    result = RefreshResult(changed=True, catalog=new_catalog, error=None)
+    window._on_refresh_finished(result)
+
+    # Wait for the async List callback to complete and _recompute_updates to run
+    def _badge_updated():
+        qapp_session.processEvents()
+        return window._sidebar._updates_count == 1
+
+    qtbot.waitUntil(_badge_updated, timeout=3000)
+
+    # Badge should show 1 (catalog has newer version)
+    assert window._sidebar._updates_count == 1
+
+
+def test_updates_badge_after_remove(qtbot, tmp_path, _dbus_bus, _fake_manager):
+    """Updates badge count should update after a remove via fake daemon on_reply."""
+    kate = App(
+        key="appimage:org.kde.kate",
+        id="org.kde.kate",
+        source=Source.APPIMAGE,
+        name="Kate",
+        summary="Text editor",
+        version="26.08.3",
+        raw={"sha256": "abc123"},
+    )
+    gimp = App(
+        key="appimage:org.gimp.gimp",
+        id="org.gimp.gimp",
+        source=Source.APPIMAGE,
+        name="GIMP",
+        summary="Image editor",
+        version="2.10.38",
+        raw={"sha256": "def456"},
+    )
+
+    window = _make_window_with_dbus(qtbot, tmp_path, _dbus_bus)
+    window._catalog_apps = [kate, gimp]
+    window._catalog_loaded = True
+
+    # Install both apps with updates available
+    inst_kate = InstalledApp(
+        id="org.kde.kate",
+        source=Source.APPIMAGE,
+        name="Kate",
+        version="26.08.2",
+        managed_name="org.kde.kate",
+        path=None,
+        role="primary",
+        sha256=None,
+        update_policy="auto",
+        self_managed=False,
+        origin={"catalog_id": "org.kde.kate", "version": "26.08.2"},
+        locked=False,
+        pending=None,
+        previous=(),
+    )
+    inst_gimp = InstalledApp(
+        id="org.gimp.gimp",
+        source=Source.APPIMAGE,
+        name="GIMP",
+        version="2.10.37",
+        managed_name="org.gimp.gimp",
+        path=None,
+        role="primary",
+        sha256=None,
+        update_policy="auto",
+        self_managed=False,
+        origin={"catalog_id": "org.gimp.gimp", "version": "2.10.37"},
+        locked=False,
+        pending=None,
+        previous=(),
+    )
+    window._installed_apps["org.kde.kate"] = inst_kate
+    window._installed_apps["org.gimp.gimp"] = inst_gimp
+    window._installed_by_catalog_id["org.kde.kate"] = inst_kate
+    window._installed_by_catalog_id["org.gimp.gimp"] = inst_gimp
+
+    # Initial recompute (happens via process_installed_list in real flow)
+    window._recompute_updates()
+    assert window._sidebar._updates_count == 2
+
+    # Set up fake manager's List to return remaining apps after remove
+    _fake_manager.script["List"] = [["org.gimp.gimp", "GIMP", "2.10.37"]]
+
+    # Trigger remove through the fake daemon (mock confirmation dialog)
+    with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
+        window._on_remove_requested("org.kde.kate")
+
+    # Wait for the remove callback to run (it calls _refresh_installed_list)
+    QTest.qWait(500)
+    QApplication.processEvents()
+
+    # Badge should show 1 (only GIMP has update now)
+    assert window._sidebar._updates_count == 1

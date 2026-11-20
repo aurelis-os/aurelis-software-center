@@ -121,3 +121,55 @@ def test_origin_linked_to_other_catalog_id_never_updatable():
     entry = _entry("org.example.app", "2.0")
     inst = _inst(_origin("org.example.other", "1.0"))
     assert update_available(entry, inst) is False
+
+
+def test_origin_without_version_no_update_on_version_alone():
+    """Origin without version should not trigger update based on version comparison alone.
+
+    Missing version in origin is treated as "unknown" - we fall back to sha256/changed_at checks.
+    """
+    entry = _entry("org.example.app", "2.0", sha256="abc")
+    # Origin has catalog_id but no version key
+    inst = _inst({"source": "aurelis-catalog", "catalog_id": "org.example.app", "sha256": "abc"})
+    assert update_available(entry, inst) is False
+
+
+def test_origin_without_version_sha256_diff_triggers_update():
+    """Origin without version but with sha256 diff should trigger update."""
+    entry = _entry("org.example.app", "2.0", sha256="new_sha")
+    inst = _inst(
+        {"source": "aurelis-catalog", "catalog_id": "org.example.app", "sha256": "old_sha"}
+    )
+    assert update_available(entry, inst) is True
+
+
+def test_origin_without_version_latest_with_newer_changed_at_triggers_update():
+    """Origin without version but latest entry with newer changed_at should trigger update."""
+    entry = _entry(
+        "org.example.app", "latest", version_changed_at="2026-02-01T00:00:00Z", sha256="abc"
+    )
+    inst = _inst(
+        {
+            "source": "aurelis-catalog",
+            "catalog_id": "org.example.app",
+            "changed_at": "2026-01-01T00:00:00Z",
+            "sha256": "abc",
+        }
+    )
+    assert update_available(entry, inst) is True
+
+
+def test_origin_without_version_latest_with_older_changed_at_no_update():
+    """Origin without version and latest entry with older changed_at should not trigger update."""
+    entry = _entry(
+        "org.example.app", "latest", version_changed_at="2026-01-01T00:00:00Z", sha256="abc"
+    )
+    inst = _inst(
+        {
+            "source": "aurelis-catalog",
+            "catalog_id": "org.example.app",
+            "changed_at": "2026-02-01T00:00:00Z",
+            "sha256": "abc",
+        }
+    )
+    assert update_available(entry, inst) is False

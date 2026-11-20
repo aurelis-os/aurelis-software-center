@@ -178,7 +178,8 @@ There is **no CLI command that prints JSON.** `pkg queue` prints coloured human 
 
 ```python
 from aurelis_common.rpc import PkgdClient
-queue = PkgdClient().queue()["queue"]     # {"install": [...], "remove": [...]}
+
+queue = PkgdClient().queue()["queue"]  # {"install": [...], "remove": [...]}
 ```
 
 `aurelis_common` is importable system-wide through the image's `aurelis-common.pth` (comment at `aurelis-pkgd:34-37`). The RPC client's own docstring names the planned software GUI as an intended user (`rpc.py:3-7`).
@@ -342,12 +343,13 @@ Preferred: use the RPC client directly (no subprocess, no ANSI parsing, structur
 
 ```python
 from aurelis_common.rpc import PkgdClient, PkgdError, PkgdDownError
-c = PkgdClient()                 # socket /run/aurelis-pkgd.sock, 600 s timeout
-c.install(["htop"])              # pkg add
-c.remove(["vim"])                # pkg remove
-c.queue()                        # {"queue": {...}}
-c.queue_clear()                  # pkg queue clear
-c.status()                       # pkg status data
+
+c = PkgdClient()  # socket /run/aurelis-pkgd.sock, 600 s timeout
+c.install(["htop"])  # pkg add
+c.remove(["vim"])  # pkg remove
+c.queue()  # {"queue": {...}}
+c.queue_clear()  # pkg queue clear
+c.status()  # pkg status data
 ```
 
 `PkgdDownError` means the daemon could not be reached or the socket refused the connection. `PkgdError` carries the daemon's `code` and `message`.

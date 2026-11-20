@@ -170,6 +170,8 @@ def _try_match_by_app_id(installed_id: str, catalog_apps: list[App]) -> Match | 
 def build_origin(entry: App) -> dict:
     """Build origin dict from catalog app entry for SetOrigin call."""
     raw = entry.raw
+    icon = raw.get("icon", {})
+    icon_name = icon.get("name") if isinstance(icon, dict) else None
     origin = {
         "source": "aurelis-catalog",
         "catalog_id": entry.id,
@@ -178,6 +180,7 @@ def build_origin(entry: App) -> dict:
         "changed_at": raw.get("version_changed_at"),
         "url": raw.get("download_url"),
         "update_policy": "auto",
+        "icon": icon_name,
     }
     return {key: value for key, value in origin.items() if value is not None}
 

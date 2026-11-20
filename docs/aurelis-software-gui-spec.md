@@ -227,11 +227,15 @@ aurelis-software/
 ### 4.1 Models (`core/models.py`)
 
 ```python
-class Source(StrEnum): APPIMAGE="appimage"; FLATPAK="flatpak"; PACMAN="pacman"
+class Source(StrEnum):
+    APPIMAGE = "appimage"
+    FLATPAK = "flatpak"
+    PACMAN = "pacman"
+
 
 @dataclass(slots=True)
-class App:                        # a catalog / index entry
-    key: str                      # f"{source}:{id}"
+class App:  # a catalog / index entry
+    key: str  # f"{source}:{id}"
     id: str
     source: Source
     name: str
@@ -241,29 +245,35 @@ class App:                        # a catalog / index entry
     store_categories: tuple[str, ...]
     search_blob: str
     raw: dict
+
     def get(self, k, default=None): ...
 
+
 @dataclass(slots=True)
-class InstalledApp:               # something present on this system
-    id: str                       # AppImage: the launcher's app_id; others: their ids
+class InstalledApp:  # something present on this system
+    id: str  # AppImage: the launcher's app_id; others: their ids
     source: Source
     name: str
     version: str | None
-    managed_name: str | None      # AppImage: file name in ~/Applications
-    path: str | None              # AppImage: file path
-    role: str                     # "primary" | "kept"
-    sha256: str | None            # AppImage: full-file hash if the daemon has it
-    update_policy: str | None     # AppImage: auto | manual | pinned
-    self_managed: bool            # AppImage: app updates itself
-    origin: dict | None           # AppImage: provenance record (catalog link)
-    locked: bool                  # system package, cannot be removed
-    pending: str | None           # "install" | "remove" | None (pacman via pkg)
-    previous: tuple[dict, ...]    # AppImage: revertible versions
+    managed_name: str | None  # AppImage: file name in ~/Applications
+    path: str | None  # AppImage: file path
+    role: str  # "primary" | "kept"
+    sha256: str | None  # AppImage: full-file hash if the daemon has it
+    update_policy: str | None  # AppImage: auto | manual | pinned
+    self_managed: bool  # AppImage: app updates itself
+    origin: dict | None  # AppImage: provenance record (catalog link)
+    locked: bool  # system package, cannot be removed
+    pending: str | None  # "install" | "remove" | None (pacman via pkg)
+    previous: tuple[dict, ...]  # AppImage: revertible versions
+
 
 @dataclass(slots=True)
 class UpdateInfo:
-    app_key: str; installed_version: str | None; new_version: str | None; size: int | None
-    method: str                   # "zsync" | "full" | "flatpak" | "pkg"
+    app_key: str
+    installed_version: str | None
+    new_version: str | None
+    size: int | None
+    method: str  # "zsync" | "full" | "flatpak" | "pkg"
 ```
 
 ### 4.2 Catalog parsing (`core/catalog.py`)
@@ -826,13 +836,32 @@ Performance budgets (measured on the owner's laptop, recorded in the README):
 
 ```python
 @dataclass
-class Started:   op_id: str; app_key: str; kind: str   # install|remove|update|revert
+class Started:
+    op_id: str
+    app_key: str
+    kind: str  # install|remove|update|revert
+
+
 @dataclass
-class Progress:  op_id: str; step: str; fraction: float | None; message: str
+class Progress:
+    op_id: str
+    step: str
+    fraction: float | None
+    message: str
+
+
 @dataclass
-class Finished:  op_id: str; app_key: str
+class Finished:
+    op_id: str
+    app_key: str
+
+
 @dataclass
-class Failed:    op_id: str; code: str; message: str; details: str   # details = stderr tail / D-Bus message
+class Failed:
+    op_id: str
+    code: str
+    message: str
+    details: str  # details = stderr tail / D-Bus message
 ```
 `fraction=None` means indeterminate. Steps used in UI text: `download`, `verify`, `handoff` ("Finishing…"), `install`, `remove`, `update`.
 

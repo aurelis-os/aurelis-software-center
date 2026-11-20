@@ -10,7 +10,7 @@ from PyQt6.QtCore import QRect, QSize
 from PyQt6.QtGui import QFont, QFontMetrics, QPainter, QPixmap
 from PyQt6.QtWidgets import QStyleOptionViewItem
 
-from aurelis_software.core.models import App, Source
+from aurelis_software.core.models import App, InstalledApp, Source
 from aurelis_software.ui.app_card_delegate import (
     CARD_SIZE,
     CHIP_H,
@@ -21,6 +21,7 @@ from aurelis_software.ui.app_card_delegate import (
 )
 from aurelis_software.ui.app_model import AppModel
 from aurelis_software.ui.icons import app_icon, clear_icon_cache
+from aurelis_software.ui.installed_page import InstalledAppModel
 
 
 def _app_missing_everything() -> App:
@@ -254,3 +255,118 @@ def test_chip_dataclass_fields():
     assert c.kind == "version"
     assert c.width == 50
     assert c.width == CHIP_H + 32 or c.width == 50  # just check it's accessible
+
+
+# ── Installed app icon tests (P4.1) ──────────────────────────────────────────
+
+
+def _installed_app_with_icon(icon_name: str | None = None) -> InstalledApp:
+    """Create an InstalledApp with optional icon in origin."""
+    origin = {"catalog_id": "org.example.app", "icon": icon_name} if icon_name else None
+    return InstalledApp(
+        id="org.example.app",
+        source=Source.APPIMAGE,
+        name="Test App",
+        version="1.0",
+        managed_name="org.example.app",
+        path=None,
+        role="primary",
+        sha256=None,
+        update_policy="auto",
+        self_managed=False,
+        origin=origin,
+        locked=False,
+        pending=None,
+        previous=(),
+    )
+
+
+def _extract_icon_from_delegate(delegate: AppCardDelegate, index, option) -> QPixmap:
+    """Paint delegate and extract the icon region pixmap."""
+    pixmap = QPixmap(CARD_SIZE)
+    pixmap.fill(0)
+    painter = QPainter(pixmap)
+    delegate.paint(painter, option, index)
+    painter.end()
+    # Icon rect matches delegate paint: rect adjusted by _SHADOW_BLUR (6), then icon at y=16
+    rect_x = 6  # _SHADOW_BLUR
+    rect_w = CARD_SIZE.width() - 2 * 6
+    icon_x = rect_x + (rect_w - ICON_SIZE.width()) // 2
+    icon_y = 6 + 16  # _SHADOW_BLUR + 16
+    return pixmap.copy(QRect(icon_x, icon_y, ICON_SIZE.width(), ICON_SIZE.height()))
+
+
+def _paint_installed_app_icon(icon_name: str | None, icons_dir: Path | None) -> QPixmap:
+    """Paint an installed app with given icon and return the icon region."""
+    clear_icon_cache()
+
+    app = _installed_app_with_icon(icon_name)
+    model = InstalledAppModel()
+    model.set_apps([app])
+    index = model.index(0, 0)
+
+    delegate = AppCardDelegate(icons_dir=icons_dir)
+    option = QStyleOptionViewItem()
+    option.rect = QRect(0, 0, CARD_SIZE.width(), CARD_SIZE.height())
+
+    return _extract_icon_from_delegate(delegate, index, option)
+
+
+def test_installed_app_with_catalog_icon_shows_icon(qtbot):
+    """Installed app with origin.icon should show the catalog icon (not fallback)."""
+    icons_tar = Path(__file__).resolve().parent.parent / "fixtures" / "app-icons.tar.gz"
+    assert icons_tar.exists(), "app-icons.tar.gz fixture missing"
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        icons_dir = Path(tmpdir)
+        with tarfile.open(icons_tar, "r:gz") as tar:
+            tar.extractall(icons_dir)
+
+        # Paint with catalog icon (Mailspring)
+        catalog_icon_pixmap = _paint_installed_app_icon(
+            "com.getmailspring.Mailspring.png", icons_dir
+        )
+
+        # Paint with fallback (no icon)
+        fallback_icon_pixmap = _paint_installed_app_icon(None, None)
+
+        # They should be different - catalog icon should not look like fallback
+        assert catalog_icon_pixmap.toImage() != fallback_icon_pixmap.toImage(), (
+            "Installed app with catalog icon should show different icon than fallback"
+        )
+
+        # Catalog icon should have non-transparent pixels (actual icon content)
+        has_content = any(
+            catalog_icon_pixmap.toImage().pixelColor(x, y).alpha() > 0
+            for x in range(catalog_icon_pixmap.width())
+            for y in range(catalog_icon_pixmap.height())
+        )
+        assert has_content, "Catalog icon should have visible content"
+
+
+def test_installed_app_without_catalog_icon_shows_fallback(qtbot):
+    """Installed app without origin.icon should show fallback icon."""
+    # Paint with no icon
+    no_icon_pixmap = _paint_installed_app_icon(None, None)
+
+    # Paint with explicit fallback (icons_dir=None, no origin.icon)
+    fallback_pixmap = _paint_installed_app_icon(None, None)
+
+    # They should be identical
+    assert no_icon_pixmap.toImage() == fallback_pixmap.toImage(), (
+        "Installed app without catalog icon should show fallback"
+    )
+
+
+def test_installed_app_with_unknown_icon_shows_fallback(qtbot):
+    """Installed app with origin.icon pointing to non-existent file shows fallback."""
+    # Paint with missing icon file
+    missing_icon_pixmap = _paint_installed_app_icon("nonexistent.png", Path("/tmp/nonexistent"))
+
+    # Paint with fallback
+    fallback_pixmap = _paint_installed_app_icon(None, None)
+
+    # They should be identical (both show fallback)
+    assert missing_icon_pixmap.toImage() == fallback_pixmap.toImage(), (
+        "Installed app with missing icon file should show fallback"
+    )

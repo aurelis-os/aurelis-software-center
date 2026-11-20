@@ -101,9 +101,17 @@ def _make_no_catalog_paths() -> Paths:
 
 def _app_full() -> App:
     # Use a local test screenshot file for offline rendering
-    test_screenshot = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "screenshots" / "test-screenshot.png"
-    screenshot_url = test_screenshot.as_uri() if test_screenshot.exists() else "https://example.com/s.png"
-    
+    test_screenshot = (
+        Path(__file__).resolve().parent.parent
+        / "tests"
+        / "fixtures"
+        / "screenshots"
+        / "test-screenshot.png"
+    )
+    screenshot_url = (
+        test_screenshot.as_uri() if test_screenshot.exists() else "https://example.com/s.png"
+    )
+
     return App(
         key="appimage:org.kde.kate",
         id="org.kde.kate",
@@ -119,9 +127,17 @@ def _app_full() -> App:
             "size": 45000000,
             "icon": {"name": "org.kde.kate.png"},
             "screenshots": [
-                {"default": True, "images": [{"type": "source", "width": 1280, "height": 800, "url": screenshot_url}]}
+                {
+                    "default": True,
+                    "images": [
+                        {"type": "source", "width": 1280, "height": 800, "url": screenshot_url}
+                    ],
+                }
             ],
-            "urls": {"homepage": "https://kate-editor.org", "vcs-browser": "https://invent.kde.org/utilities/kate"},
+            "urls": {
+                "homepage": "https://kate-editor.org",
+                "vcs-browser": "https://invent.kde.org/utilities/kate",
+            },
             "description": "A powerful text editor.\nSupports plugins and sessions.",
         },
     )

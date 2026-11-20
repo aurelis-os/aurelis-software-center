@@ -20,8 +20,14 @@ def update_available(entry: App, inst: InstalledApp, *, include_self_managed: bo
         return False
     if inst.self_managed and not include_self_managed:
         return False
+
+    origin_version = origin.get("version")
+    # If origin has no version, treat as unknown: don't report update based on version alone
+    # Only check sha256 and changed_at (for "latest")
+    version_differs = origin_version is not None and entry.version != origin_version
+
     return bool(
-        entry.version != origin.get("version")
+        version_differs
         or (
             entry.raw.get("sha256")
             and origin.get("sha256")

@@ -89,8 +89,12 @@ def _make_empty_catalog_paths() -> Paths:
 
 
 def _app_kate() -> App:
-    test_screenshot = Path(__file__).resolve().parent.parent / "tests/fixtures/screenshots/test-screenshot.png"
-    screenshot_url = test_screenshot.as_uri() if test_screenshot.exists() else "https://example.com/s.png"
+    test_screenshot = (
+        Path(__file__).resolve().parent.parent / "tests/fixtures/screenshots/test-screenshot.png"
+    )
+    screenshot_url = (
+        test_screenshot.as_uri() if test_screenshot.exists() else "https://example.com/s.png"
+    )
     return App(
         key="appimage:org.kde.kate",
         id="org.kde.kate",
@@ -106,7 +110,12 @@ def _app_kate() -> App:
             "size": 45000000,
             "icon": {"name": "org.kde.kate.png"},
             "screenshots": [
-                {"default": True, "images": [{"type": "source", "width": 1280, "height": 800, "url": screenshot_url}]}
+                {
+                    "default": True,
+                    "images": [
+                        {"type": "source", "width": 1280, "height": 800, "url": screenshot_url}
+                    ],
+                }
             ],
             "urls": {"homepage": "https://kate-editor.org", "bugtracker": "https://bugs.kde.org"},
             "description": "A powerful text editor.\nSupports plugins and sessions.",
@@ -115,8 +124,12 @@ def _app_kate() -> App:
 
 
 def _app_gimp() -> App:
-    test_screenshot = Path(__file__).resolve().parent.parent / "tests/fixtures/screenshots/test-screenshot.png"
-    screenshot_url = test_screenshot.as_uri() if test_screenshot.exists() else "https://example.com/s.png"
+    test_screenshot = (
+        Path(__file__).resolve().parent.parent / "tests/fixtures/screenshots/test-screenshot.png"
+    )
+    screenshot_url = (
+        test_screenshot.as_uri() if test_screenshot.exists() else "https://example.com/s.png"
+    )
     return App(
         key="appimage:org.gimp.gimp",
         id="org.gimp.gimp",
@@ -132,7 +145,12 @@ def _app_gimp() -> App:
             "size": 120000000,
             "icon": {"name": "org.gimp.gimp.png"},
             "screenshots": [
-                {"default": True, "images": [{"type": "source", "width": 1280, "height": 800, "url": screenshot_url}]}
+                {
+                    "default": True,
+                    "images": [
+                        {"type": "source", "width": 1280, "height": 800, "url": screenshot_url}
+                    ],
+                }
             ],
             "urls": {"homepage": "https://www.gimp.org"},
             "description": "A free and open-source image editor.",
@@ -188,6 +206,7 @@ def main() -> int:
 
     print("Setting up private D-Bus session...")
     import subprocess
+
     result = subprocess.run(
         ["dbus-daemon", "--session", "--print-address", "--fork"],
         capture_output=True,
@@ -207,13 +226,13 @@ def main() -> int:
     print("Creating MainWindow with fake daemon...")
     paths = _make_paths(REAL_DB)
     config = Config({"network": {"offline": True}, "downloads": {"allow_unverified": "ask"}})
-    
+
     # We need to manually create the MainWindow without its auto D-Bus init
     # So we create a subclass that skips _init_dbus
     class ScreenshotMainWindow(MainWindow):
         def _init_dbus(self) -> None:
             pass
-    
+
     window = ScreenshotMainWindow(paths, config)
 
     # Manually set up D-Bus with our fake
@@ -259,7 +278,10 @@ def main() -> int:
     window._detail.start_operation("dl-test", "install")
     # Simulate download progress at 42%
     from aurelis_software.backends.base import OperationEvent
-    event = type("Event", (), {"step": "download", "fraction": 0.42, "message": "Downloading… 42%"})()
+
+    event = type(
+        "Event", (), {"step": "download", "fraction": 0.42, "message": "Downloading… 42%"}
+    )()
     window._detail.update_operation_progress("dl-test", event)
     _grab(window, "02-install-download-42pct-1100x720.png")
 
@@ -325,7 +347,10 @@ def main() -> int:
     # --- 6-9. Error states ---
     print("\n=== 6-9. Error states ===")
     from aurelis_software.core.errors import (
-        NetworkError, ChecksumMismatch, DiskFull, DaemonUnavailable
+        NetworkError,
+        ChecksumMismatch,
+        DiskFull,
+        DaemonUnavailable,
     )
 
     error_cases = [
@@ -338,7 +363,9 @@ def main() -> int:
     for i, (name, error) in enumerate(error_cases, start=6):
         window._detail.set_app(kate)
         window._stack.setCurrentWidget(window._detail)
-        window._detail.operation_failed(str(error), error.details if hasattr(error, 'details') else "")
+        window._detail.operation_failed(
+            str(error), error.details if hasattr(error, "details") else ""
+        )
         _grab(window, f"{i:02d}-error-{name}-1100x720.png")
 
         _resize_and_wait(window, 800, 600)

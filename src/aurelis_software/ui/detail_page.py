@@ -231,7 +231,6 @@ class DetailPage(QWidget):
     def _clear_progress(self) -> None:
         if self._progress_widget:
             self._progress_widget.hide()
-            self._progress_widget = None
 
     # ------------------------------------------------------------------ state machine
 
@@ -473,7 +472,12 @@ class DetailPage(QWidget):
         self._action_button = None
         self._secondary_button = None
 
-        # Configure existing progress widget
+        # Configure existing progress widget (recreate if it was cleared)
+        if self._progress_widget is None:
+            self._progress_widget = InlineProgressWidget(
+                kind="install",
+                cancellable=True,
+            )
         self._progress_widget.set_cancellable(self._state in ("Installing", "Updating"))
         kind = (
             self._state.lower()

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QHBoxLayout,
@@ -354,15 +356,20 @@ class OperationsTray(QWidget):
 class Toast(QWidget):
     """Non-modal success/error toast (section 10.5)."""
 
+    action_triggered = pyqtSignal(str)  # action name
+
     def __init__(
         self,
         text: str,
         kind: str = "success",
         parent: QWidget | None = None,
+        action_text: str | None = None,
+        action_callback: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent, Qt.WindowType.ToolTip | Qt.WindowType.FramelessWindowHint)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint)
+        self._action_callback = action_callback
 
         colors = {
             "success": ("#34c759", "#1d1d1f"),
@@ -387,7 +394,26 @@ class Toast(QWidget):
 
         label = QLabel(text)
         label.setWordWrap(True)
-        layout.addWidget(label)
+        layout.addWidget(label, stretch=1)
+
+        if action_text and action_callback:
+            action_btn = QPushButton(action_text)
+            action_btn.setStyleSheet(
+                f"QPushButton {{"
+                f"  background: transparent; color: {fg}; border: 1px solid {fg};"
+                f"  border-radius: 6px; font-size: 12px; font-weight: 600;"
+                f"  padding: 4px 12px;"
+                f"}}"
+                f"QPushButton:hover {{ background: {fg}33; }}"
+            )
+            action_btn.clicked.connect(self._on_action_clicked)
+            layout.addWidget(action_btn)
+
+    def _on_action_clicked(self) -> None:
+        if self._action_callback:
+            self._action_callback()
+        self.action_triggered.emit("undo")
+        self.close()
 
     def show_toast(self, duration_ms: int = 3000) -> None:
         """Show the toast at the bottom center of the parent."""
@@ -401,8 +427,21 @@ class Toast(QWidget):
         QTimer.singleShot(duration_ms, self.close)
 
 
-def show_toast(text: str, kind: str = "success", parent: QWidget | None = None) -> Toast:
-    """Convenience function to show a toast."""
-    toast = Toast(text, kind, parent)
-    toast.show_toast()
+def show_toast(
+    text: str,
+    kind: str = "success",
+    parent: QWidget | None = None,
+    action_text: str | None = None,
+    action_callback: Callable[[], None] | None = None,
+    duration_ms: int | None = None,
+) -> Toast:
+    """Convenience function to show a toast.
+
+    When an action button is present (e.g. "Undo"), the default duration is
+    extended to 10 s so the user has time to click it.
+    """
+    toast = Toast(text, kind, parent, action_text, action_callback)
+    if duration_ms is None:
+        duration_ms = 10000 if (action_text and action_callback) else 3000
+    toast.show_toast(duration_ms)
     return toast

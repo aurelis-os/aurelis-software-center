@@ -60,6 +60,9 @@ class InstalledAppModel(AppModel):
             "pending": app.pending,
             "previous": app.previous,
         }
+        # Include icon from origin for delegate
+        if app.origin and app.origin.get("icon"):
+            raw_dict["icon"] = {"name": app.origin["icon"]}
         # Include dynamic attributes if present
         if hasattr(app, "update_available"):
             raw_dict["update_available"] = app.update_available

@@ -98,7 +98,7 @@ class _Manager1Adaptor(QDBusAbstractAdaptor):
     @pyqtSlot(str, "QVariantMap", result="QVariantMap")  # s, a{sv} -> a{sv}
     def Install(self, path: str, options: dict) -> dict:  # noqa: N802
         self._fake.calls.append(("Install", path, options))
-        return self._respond("Install")
+        return self._delayed_respond("Install")
 
     @pyqtSlot(str, "QVariantMap", result=bool)  # s, a{sv} -> b
     def Remove(self, name: str, options: dict) -> bool:  # noqa: N802

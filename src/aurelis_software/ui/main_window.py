@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import override
 
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
+from PyQt6.QtNetwork import QNetworkAccessManager
 from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -22,7 +23,12 @@ from aurelis_software.backends.appimage import AppImageBackend
 from aurelis_software.core.catalog import CatalogSchemaTooNew, load_catalog
 from aurelis_software.core.config import Config
 from aurelis_software.core.errors import AurelisError
-from aurelis_software.core.matching import MatchKind, build_origin, match_installed_to_catalog
+from aurelis_software.core.matching import (
+    Match,
+    MatchKind,
+    build_origin,
+    match_installed_to_catalog,
+)
 from aurelis_software.core.models import App, InstalledApp, Source
 from aurelis_software.core.paths import Paths
 from aurelis_software.core.search import build_index, search
@@ -32,11 +38,12 @@ from aurelis_software.services.downloader import Downloader
 from aurelis_software.services.operations import OperationQueue
 from aurelis_software.services.qt_dbus import DbusClient
 from aurelis_software.services.qt_operations import QtOperationFactory
+from aurelis_software.services.zsync import fetch_update
 from aurelis_software.ui.app_list_view import AppListView
 from aurelis_software.ui.banners import Banner
 from aurelis_software.ui.conflict_dialog import ConflictDialog, UnverifiedDownloadDialog
 from aurelis_software.ui.detail_page import DetailPage
-from aurelis_software.ui.progress_widgets import show_toast
+from aurelis_software.ui.progress_widgets import InlineProgressWidget, show_toast
 from aurelis_software.ui.settings_dialog import SettingsDialog
 from aurelis_software.ui.sidebar import (
     SECTION_EXPLORE,
@@ -91,6 +98,8 @@ class MainWindow(QMainWindow):
         # Installed apps cache
         self._installed_apps: dict[str, InstalledApp] = {}
         self._installed_by_catalog_id: dict[str, InstalledApp] = {}
+        self._update_nam_refs: dict[str, QNetworkAccessManager] = {}
+        self._update_downloaders: dict[str, object] = {}
 
         # ── Root layout ────────────────────────────────────────────────────
         central = QWidget()
@@ -368,6 +377,9 @@ class MainWindow(QMainWindow):
         for inst in self._installed_apps.values():
             self._match_and_update_installed(inst)
 
+        # Recompute updates and update sidebar badge
+        self._recompute_updates()
+
         # Refresh installed page if it exists
         if hasattr(self, "_installed"):
             self._installed.set_apps(list(self._installed_apps.values()))
@@ -385,38 +397,72 @@ class MainWindow(QMainWindow):
         match = match_installed_to_catalog(inst, self._catalog_apps, file_sha256=file_sha256)
 
         if match.kind == MatchKind.ORIGIN:
-            # Linked via origin - already has correct origin
-            if match.catalog_app:
-                inst.origin = {"catalog_id": match.catalog_app.id}
-                inst.update_policy = "auto"
-                if update_available(match.catalog_app, inst):
-                    inst.update_available = True
-                self._installed_by_catalog_id[match.catalog_app.id] = inst
+            self._handle_origin_match(inst, match)
         elif match.kind == MatchKind.SHA256:
-            # Auto-link via sha256 match
-            if match.catalog_app:
-                origin = build_origin(match.catalog_app)
-                inst.origin = origin
-                self._appimage_backend.set_origin_async(
-                    inst.id,
-                    origin,
-                    reply_cb=lambda ok: None,
-                    error_cb=lambda e: None,
-                )
-                if update_available(match.catalog_app, inst):
-                    inst.update_available = True
-                self._installed_by_catalog_id[match.catalog_app.id] = inst
+            self._handle_sha256_match(inst, match)
         elif match.kind == MatchKind.APP_ID:
-            # Suggest link via app_id match
-            if match.catalog_app:
-                inst.suggest_link = build_origin(match.catalog_app)
-                self._installed_by_catalog_id[match.catalog_app.id] = inst
-        elif match.kind == MatchKind.AMBIGUOUS:
-            # Ambiguous - no link, show as unmanaged
-            pass
-        else:  # UNMANAGED
-            # No match - unmanaged
-            pass
+            self._handle_app_id_match(inst, match)
+        # AMBIGUOUS and UNMANAGED: nothing to do
+
+    def _update_available_for(self, inst: InstalledApp, entry: App) -> bool:
+        """Check if an update is available for an installed app, using config for self_managed."""
+        include_self_managed = bool(self.config.get("updates.include_self_managed"))
+        return update_available(entry, inst, include_self_managed=include_self_managed)
+
+    def _handle_origin_match(self, inst: InstalledApp, match: Match) -> None:
+        if not match.catalog_app:
+            return
+        catalog_icon = match.catalog_app.raw.get("icon", {})
+        icon_name = catalog_icon.get("name") if isinstance(catalog_icon, dict) else None
+        if inst.origin:
+            inst.origin = {
+                **inst.origin,
+                "icon": icon_name,
+                "url": match.catalog_app.raw.get("download_url"),
+            }
+        else:
+            inst.origin = build_origin(match.catalog_app)
+        inst.update_policy = "auto"
+        if self._update_available_for(inst, match.catalog_app):
+            inst.update_available = True
+        self._installed_by_catalog_id[match.catalog_app.id] = inst
+
+    def _handle_sha256_match(self, inst: InstalledApp, match: Match) -> None:
+        if not match.catalog_app:
+            return
+        origin = build_origin(match.catalog_app)
+        inst.origin = origin
+        self._appimage_backend.set_origin_async(
+            inst.id,
+            origin,
+            reply_cb=lambda ok: None,
+            error_cb=lambda e: None,
+        )
+        if self._update_available_for(inst, match.catalog_app):
+            inst.update_available = True
+        self._installed_by_catalog_id[match.catalog_app.id] = inst
+
+    def _handle_app_id_match(self, inst: InstalledApp, match: Match) -> None:
+        if not match.catalog_app:
+            return
+        inst.suggest_link = build_origin(match.catalog_app)
+        self._installed_by_catalog_id[match.catalog_app.id] = inst
+
+    def _recompute_updates(self) -> None:
+        """Recompute update availability for all installed apps and update sidebar badge."""
+        count = 0
+        for inst in self._installed_apps.values():
+            if not inst.origin:
+                continue
+            catalog_app = next(
+                (a for a in self._catalog_apps if a.id == inst.origin.get("catalog_id")), None
+            )
+            if catalog_app and self._update_available_for(inst, catalog_app):
+                inst.update_available = True
+                count += 1
+            else:
+                inst.update_available = False
+        self._sidebar.set_updates_count(count)
 
     # ------------------------------------------------------------------ search
 
@@ -648,12 +694,14 @@ class MainWindow(QMainWindow):
 
         def on_reply(result: dict) -> None:
             # result contains: app, changed, previous
-            self._active_operations.pop(f"dl-{app.id}", None)
+            self._active_operations.pop(op_id, None)
             # Build installed record with origin so _update_state returns "Installed"
             from aurelis_software.core.matching import build_origin
             from aurelis_software.core.models import InstalledApp, Source
 
             origin = build_origin(app)
+            # Include previous versions from daemon reply
+            previous = result.get("previous", [])
             inst = InstalledApp(
                 id=app.id,
                 source=Source.APPIMAGE,
@@ -668,16 +716,31 @@ class MainWindow(QMainWindow):
                 origin=origin,
                 locked=False,
                 pending=None,
-                previous=(),
+                previous=tuple(previous),
             )
             # Update caches so subsequent list refreshes preserve the origin
             self._installed_apps[app.id] = inst
             self._installed_by_catalog_id[app.id] = inst
+            # Recompute updates for sidebar badge
+            self._recompute_updates()
             # Set installed record on detail before emitting finished
             self._detail.set_installed(inst)
             self._detail.operation_finished.emit(
-                f"dl-{app.id}", type("Result", (), {"ok": True, "error": None})()
+                op_id, type("Result", (), {"ok": True, "error": None})()
             )
+            # Show success toast with Undo if previous version exists
+            if previous:
+                show_toast(
+                    self.tr("{name} installed.").format(name=app.name),
+                    "success",
+                    self,
+                    action_text=self.tr("Undo"),
+                    action_callback=lambda: self._on_undo_update(app.id),
+                )
+            else:
+                show_toast(
+                    self.tr("{name} installed.").format(name=app.name), "success", self
+                )
 
         def on_error(error: AurelisError) -> None:
             # Handle ConflictPending
@@ -690,8 +753,8 @@ class MainWindow(QMainWindow):
                 # Clean up cache file
                 path.unlink(missing_ok=True)
                 error_type = type(error).__name__
-                self._detail.operation_failed(str(error), "", error_type)
-                self._active_operations.pop(f"dl-{app.id}", None)
+                self._detail.operation_failed(str(error), getattr(error, "details", ""), error_type)
+                self._active_operations.pop(op_id, None)
                 show_toast(
                     self.tr("Install failed: {error}").format(error=error.message), "error", self
                 )
@@ -754,82 +817,200 @@ class MainWindow(QMainWindow):
         if not app or not inst:
             return
 
-        # Similar to install but with zsync if available
+        # Check for existing update operation
+        if any(
+            op[1] == "update" and op[0].id == app_id for op in self._active_operations.values()
+        ):
+            return
+
         self._start_update(app, inst)
 
     def _start_update(self, app: App, inst: InstalledApp) -> None:
-        """Start an update operation."""
-        # Check for zsync
-        zsync_url = app.raw.get("zsync_url")
-        installed_path = inst.path
-
-        if zsync_url and installed_path:
-            # Try zsync delta update
-            self._start_zsync_update(app, inst, zsync_url, installed_path)
-        else:
-            # Full download
-            self._start_download(app)
-
-    def _start_zsync_update(
-        self, app: App, inst: InstalledApp, zsync_url: str, installed_path: str
-    ) -> None:
-        """Run zsync for delta update."""
-        import subprocess
-
-        dest = (
-            self.paths.cache_dir / "downloads" / f"{app.id}-{app.version or 'latest'}.AppImage.part"
-        )
-
+        """Start an update operation using fetch_update (zsync with fallback)."""
+        installed_path = inst.path if inst.path else None
         op_id = f"dl-{app.id}"
         self._detail.start_operation(op_id, "update")
         self._active_operations[op_id] = (app, "update", app.id)
+        # Ensure the installed app is tracked so _recompute_updates() can find it
+        # (badge must stay correct throughout the operation and after any failure)
+        if inst.id not in self._installed_apps:
+            self._installed_apps[inst.id] = inst
+        if inst.origin and inst.origin.get("catalog_id") and inst.id not in self._installed_by_catalog_id:
+            self._installed_by_catalog_id[inst.id] = inst
 
-        def run_zsync() -> None:
-            try:
-                result = subprocess.run(
-                    ["zsync", "-i", installed_path, "-o", str(dest), zsync_url],
-                    check=False,
-                    capture_output=True,
-                    text=True,
-                    timeout=300,
+        # Keep nam alive for the duration of the download
+        nam = QNetworkAccessManager(self)
+        downloader = fetch_update(
+            app,
+            installed_path,
+            self.paths.cache_dir,
+            nam,
+            expected_size=app.raw.get("size"),
+        )
+        # Store reference to prevent garbage collection
+        self._update_nam_refs[op_id] = nam
+        self._update_downloaders[op_id] = downloader
+
+        def on_progress(received: int, total: int) -> None:
+            fraction = received / total if total > 0 else None
+            self._detail.update_operation_progress(
+                op_id,
+                type("Event", (), {"step": "download", "fraction": fraction, "message": ""})(),
+            )
+
+        def on_finished(path: Path) -> None:
+            # Verify sha256 if present (fetch_update already does this, but double-check)
+            sha256 = app.raw.get("sha256")
+            if sha256:
+                self._detail.update_operation_progress(
+                    op_id,
+                    type("Event", (), {"step": "verify", "fraction": None, "message": ""})(),
                 )
-                if result.returncode == 0 and dest.exists():
-                    # Verify sha256
-                    sha256 = app.raw.get("sha256")
-                    if sha256:
-                        import hashlib
+                import hashlib
 
-                        with open(dest, "rb") as f:
-                            digest = hashlib.sha256(f.read()).hexdigest()
-                        if digest != sha256:
-                            dest.unlink(missing_ok=True)
-                            self._detail.operation_failed(
-                                "Checksum mismatch", f"Expected {sha256}, got {digest}"
-                            )
-                            return
-                    # Rename and install
-                    final = dest.with_suffix("")
-                    dest.rename(final)
-                    options = {
-                        "source_action": "move",
-                        "conflict": "replace",
-                        "silent": True,
-                        "origin": build_origin(app),
-                    }
-                    self._call_install(app, final, options)
-                else:
-                    # Fallback to full download
-                    self._start_download(app)
-            except (subprocess.SubprocessError, OSError, TimeoutError) as e:
-                self._detail.operation_failed(str(e), "")
+                with open(path, "rb") as f:
+                    digest = hashlib.sha256(f.read()).hexdigest()
+                if digest != sha256:
+                    path.unlink(missing_ok=True)
+                    self._detail.operation_failed(
+                        "Checksum mismatch", f"Expected {sha256}, got {digest}"
+                    )
+                    show_toast(
+                        self.tr("Checksum mismatch for {name}").format(name=app.name), "error", self
+                    )
+                    self._active_operations.pop(op_id, None)
+                    return
 
-        # Run in thread
-        from PyQt6.QtCore import QThread
+            # Handoff to daemon with Install (conflict=replace for update)
+            # Emit handoff progress BEFORE the Install D-Bus call so the UI
+            # transitions to the indeterminate "Finishing…" phase first (R1.3).
+            self._detail.update_operation_progress(
+                op_id,
+                type("Event", (), {"step": "handoff", "fraction": None, "message": self.tr("Finishing…")})(),
+            )
 
-        worker = QThread()
-        worker.run = run_zsync
-        worker.finished.connect(worker.deleteLater)
-        worker.start()
+            # Build origin with NEW version/sha256 so update_available becomes False
+            origin = build_origin(app)
+
+            # Call Install with conflict=replace, silent=true
+            options = {
+                "source_action": "move",
+                "conflict": "replace",
+                "silent": True,
+                "origin": origin,
+            }
+            self._call_update_install(app, path, options, op_id)
+
+        def on_failed(error: Exception) -> None:
+            self._detail.operation_failed(str(error), getattr(error, "details", ""))
+            self._active_operations.pop(op_id, None)
+            self._update_nam_refs.pop(op_id, None)
+            self._recompute_updates()
+            show_toast(
+                self.tr("Update failed: {error}").format(error=str(error)), "error", self
+            )
+
+        def _cleanup():
+            self._update_nam_refs.pop(op_id, None)
+            self._update_downloaders.pop(op_id, None)
+
+        downloader.progress.connect(on_progress)
+        downloader.finished.connect(on_finished)
+        downloader.failed.connect(on_failed)
+        downloader.finished.connect(_cleanup)
+        downloader.failed.connect(_cleanup)
+
+    def _call_update_install(self, app: App, path: Path, options: dict, op_id: str) -> None:
+        """Call Install on the daemon for an update (conflict=replace)."""
+        if not self._appimage_backend:
+            return
+
+        def on_reply(result: dict) -> None:
+            # result contains: app, changed, previous
+            # Build installed record with origin so _update_state returns "Installed"
+            from aurelis_software.core.matching import build_origin
+            from aurelis_software.core.models import InstalledApp, Source
+
+            origin = build_origin(app)
+            # Include previous versions from daemon reply
+            previous = result.get("previous", [])
+            inst = InstalledApp(
+                id=app.id,
+                source=Source.APPIMAGE,
+                name=app.name,
+                version=app.version,
+                managed_name=app.id,
+                path=None,
+                role="primary",
+                sha256=app.raw.get("sha256"),
+                update_policy="auto",
+                self_managed=False,
+                origin=origin,
+                locked=False,
+                pending=None,
+                previous=tuple(previous),
+            )
+            # Update caches so subsequent list refreshes preserve the origin
+            self._installed_apps[app.id] = inst
+            self._installed_by_catalog_id[app.id] = inst
+            # Recompute updates for sidebar badge
+            self._recompute_updates()
+            # Set installed record on detail before emitting finished
+            self._detail.set_installed(inst)
+            self._detail.operation_finished.emit(
+                op_id, type("Result", (), {"ok": True, "error": None})()
+            )
+            # Defer active-operation cleanup to the next event loop cycle so that
+            # callers checking _active_operations immediately after a D-Bus reply
+            # (e.g. duplicate-update guards) see a consistent snapshot.
+            QTimer.singleShot(0, lambda: self._active_operations.pop(op_id, None))
+            # Show success toast with Undo if previous version exists
+            if previous:
+                show_toast(
+                    self.tr("{name} updated.").format(name=app.name),
+                    "success",
+                    self,
+                    action_text=self.tr("Undo"),
+                    action_callback=lambda: self._on_undo_update(app.id),
+                )
+            else:
+                show_toast(
+                    self.tr("{name} updated.").format(name=app.name), "success", self
+                )
+
+        def on_error(error: Exception) -> None:
+            # Clean up cache file
+            path.unlink(missing_ok=True)
+            error_type = type(error).__name__
+            self._detail.operation_failed(str(error), getattr(error, "details", ""), error_type)
+            self._active_operations.pop(op_id, None)  # pop BEFORE recomputing badge
+            self._recompute_updates()
+            show_toast(
+                self.tr("Update failed: {error}").format(error=str(error)), "error", self
+            )
+
+        self._appimage_backend.install_async(
+            str(path), options, reply_cb=on_reply, error_cb=on_error
+        )
+
+    def _on_undo_update(self, app_id: str) -> None:
+        """Handle Undo toast action - call Revert on the daemon."""
+        inst = self._installed_apps.get(app_id)
+        if not inst:
+            return
+
+        if self._appimage_backend:
+            def on_reply(ok: bool) -> None:
+                if ok:
+                    show_toast(self.tr("Reverted {name}").format(name=inst.name), "success", self)
+                self._refresh_installed_list()
+
+            def on_error(error: Exception) -> None:
+                show_toast(
+                    self.tr("Revert failed: {error}").format(error=str(error)), "error", self
+                )
+
+            self._appimage_backend.revert_async(inst.id, reply_cb=on_reply, error_cb=on_error)
 
     def _on_remove_requested(self, app_id: str) -> None:
         inst = self._installed_apps.get(app_id)
