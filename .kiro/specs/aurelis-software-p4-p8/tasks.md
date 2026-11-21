@@ -220,20 +220,20 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - Run `./check`; paste real output
     - **Stop here for owner review before starting Phase 7**
 
-- [ ] 4. Phase 7 — Wizards
+- [x] 4. Phase 7 — Wizards
 
-  - [ ] 4.1 Create `wizards/__init__.py` and `wizards/detect.py`
+  - [x] 4.1 Create `wizards/__init__.py` and `wizards/detect.py`
     - `detect(path, *, applications_dir, flatpak_export_dirs, core_packages_path, user_packages_path, list_runner) -> DetectionResult`
     - `DetectionResult(kind, id, name)` where kind ∈ `{"appimage", "flatpak", "pacman-system", "pacman-user", "unknown"}`
     - Detection order per R19.2; all file I/O injected via `list_runner` and `Path` arguments
     - No Qt, no subprocess side effects
     - _Requirements: R19.1, R19.2_
 
-  - [ ]* 4.2 Write property test for detection determinism (Property 6)
+  - [x]* 4.2 Write property test for detection determinism (Property 6)
     - **Property 6: Detection determinism** — `detect(path, ...)` with same inputs always returns the same `DetectionResult`
     - **Validates: R19.1, R19.2**
 
-  - [ ]* 4.3 Write table-driven tests for every detection branch (`tests/wizards/test_detect.py`)
+  - [x]* 4.3 Write table-driven tests for every detection branch (`tests/wizards/test_detect.py`)
     - AppImage in applications_dir → appimage
     - Desktop entry with `X-AppImage-Managed=true` → appimage
     - Desktop entry in Flatpak exports → flatpak
@@ -243,7 +243,7 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - All six branches must have an assertion that fails without the feature
     - _Requirements: R19.2, R19.3_
 
-  - [ ] 4.4 Create `wizards/install_wizard.py`
+  - [x] 4.4 Create `wizards/install_wizard.py`
     - `InstallWizard(path, backend, config, paths)` as a `QDialog`
     - Routing: if the AppImage is already in `applications_dir`, call `QProcess.startDetached("appimage", ["run", managed_name])` and return immediately with no UI
     - Page 1: name, icon, version, relation wording; **Install**, **Just run** + "Don't ask again" checkbox, **Cancel**
@@ -253,11 +253,11 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - "Don't ask again": stores `{"app_id": ..., "sha256": ...}` in `config["wizard"]["run_without_asking"]`
     - _Requirements: R20.1–R20.5_
 
-  - [ ] 4.5 Wire "run without asking" list into `settings_dialog.py`
+  - [x] 4.5 Wire "run without asking" list into `settings_dialog.py`
     - Add a list widget in Settings showing entries in `wizard.run_without_asking`; each row has a **Remove** button that pops the entry from config and saves
     - _Requirements: R20.6_
 
-  - [ ] 4.6 Create `wizards/uninstall_wizard.py`
+  - [x] 4.6 Create `wizards/uninstall_wizard.py`
     - `UninstallWizard(path_or_desktop_id, backends, config, paths)` as a `QDialog`
     - Calls `detect()` on startup
     - System package → single page refusal with **Close** only
@@ -265,27 +265,27 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - Page 2 calls: AppImage `Remove(name, {file_action:"trash", silent:true})`; Flatpak `flatpak uninstall --user -y <id>`; Pacman `pkg remove <name>` with restart note
     - _Requirements: R21.1–R21.4_
 
-  - [ ] 4.7 Wire wizard entry points into `__main__.py`
+  - [x] 4.7 Wire wizard entry points into `__main__.py`
     - Parse `wizard install <path>` and `wizard uninstall <path>` subcommands
     - Build only the required backend(s), skip catalog loading and main window
     - _Requirements: R20.1, R21.1, R23.1_
 
-  - [ ] 4.8 Create MIME and desktop integration files
+  - [x] 4.8 Create MIME and desktop integration files
     - `resources/aurelis-software-wizard-install.desktop`: `NoDisplay=true`, `MimeType=application/vnd.appimage;application/vnd.flatpak.ref;application/vnd.flatpak;`, `Exec=aurelis-software wizard install %f`
     - `resources/aurelis-software-uninstall.desktop`: Dolphin service menu, `Exec=aurelis-software wizard uninstall %f`
     - Run `desktop-file-validate` on both in a test
     - _Requirements: R22.1, R22.2, R22.3_
 
-  - [ ] 4.9 Measure wizard startup time and add a timing test
+  - [x] 4.9 Measure wizard startup time and add a timing test
     - In `tests/wizards/test_install_wizard.py`, record wall-clock time from `InstallWizard.__init__` to first page visible; assert < 500 ms
     - _Requirements: R23.1_
 
-  - [ ]* 4.10 Write offscreen UI tests for all wizard pages (`tests/wizards/test_install_wizard.py`, `tests/wizards/test_uninstall_wizard.py`)
+  - [x]* 4.10 Write offscreen UI tests for all wizard pages (`tests/wizards/test_install_wizard.py`, `tests/wizards/test_uninstall_wizard.py`)
     - Install wizard: routing (in-folder AppImage runs directly); Page 1 shows relation wording; Install triggers correct D-Bus call; Just run executes file; "Don't ask again" stores entry; Flatpak file path triggers flatpak command
     - Uninstall wizard: system package → refusal page only; AppImage → Remove with trash; Flatpak → flatpak uninstall; Pacman user → pkg remove with restart note; unknown → explanation page
     - _Requirements: R24.1_
 
-  - [ ] 4.11 Phase 7 checkpoint — run `./check` and confirm all tests pass
+  - [x] 4.11 Phase 7 checkpoint — run `./check` and confirm all tests pass
     - Run `./check`; paste real output
     - **Stop here for owner review before starting Phase 8**
 
