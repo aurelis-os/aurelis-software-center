@@ -278,9 +278,7 @@ class UninstallWizard(QDialog):
         """Remove Flatpak using QProcess."""
         self.flatpak_process = QProcess(self)
         self.flatpak_process.finished.connect(self._on_flatpak_finished)
-        self.flatpak_process.start(
-            "flatpak", ["uninstall", "--user", "-y", self.detection.id]
-        )
+        self.flatpak_process.start("flatpak", ["uninstall", "--user", "-y", self.detection.id])
 
     def _on_flatpak_finished(self, exit_code: int, exit_status) -> None:
         """Handle Flatpak uninstall completion."""
@@ -299,9 +297,7 @@ class UninstallWizard(QDialog):
     def _on_pacman_finished(self, exit_code: int, exit_status) -> None:
         """Handle pacman removal completion."""
         if exit_code == 0:
-            self.status_label.setText(
-                self.tr("Removal complete!\n(applies after restart)")
-            )
+            self.status_label.setText(self.tr("Removal complete!\n(applies after restart)"))
             self.progress_bar.setRange(0, 1)
             self.progress_bar.setValue(1)
             self.done_button.setEnabled(True)

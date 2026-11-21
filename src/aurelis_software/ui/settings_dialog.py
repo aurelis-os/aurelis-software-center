@@ -8,6 +8,7 @@ from PyQt6.QtWidgets import (
     QDialogButtonBox,
     QGridLayout,
     QGroupBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
@@ -96,12 +97,13 @@ class SettingsDialog(QDialog):
         """Populate the run-without-asking list widget."""
         self.run_without_asking_list.clear()
         run_list = self.config.get("wizard.run_without_asking", [])
-        
+
         for entry in run_list:
             if isinstance(entry, dict):
                 app_id = entry.get("app_id", "")
                 item_widget = self._create_list_item(app_id, entry)
                 from PyQt6.QtWidgets import QListWidgetItem
+
                 list_item = QListWidgetItem(self.run_without_asking_list)
                 list_item.setSizeHint(item_widget.sizeHint())
                 self.run_without_asking_list.addItem(list_item)
@@ -114,15 +116,15 @@ class SettingsDialog(QDialog):
         widget = QWidget()
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(4, 4, 4, 4)
-        
+
         label = QLabel(app_id)
         layout.addWidget(label)
         layout.addStretch()
-        
+
         remove_btn = QPushButton(self.tr("Remove"))
         remove_btn.clicked.connect(lambda: self._remove_entry(entry))
         layout.addWidget(remove_btn)
-        
+
         return widget
 
     def _remove_entry(self, entry: dict) -> None:
@@ -132,6 +134,7 @@ class SettingsDialog(QDialog):
         if entry in run_list:
             run_list.remove(entry)
             from aurelis_software.core.config import Config
+
             self.config = Config(data)
             save(self.paths, self.config)
             self._populate_run_without_asking()

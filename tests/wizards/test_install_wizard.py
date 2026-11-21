@@ -41,7 +41,7 @@ def test_routing_appimage_in_folder(qapp_session, tmp_path, mock_backend, test_p
     """Test that AppImage in applications folder runs directly."""
     apps_dir = Path.home() / ".local" / "share" / "applications-managed"
     apps_dir.mkdir(parents=True, exist_ok=True)
-    
+
     appimage = apps_dir / "test.AppImage"
     appimage.write_text("fake")
 
@@ -61,7 +61,7 @@ def test_page1_ui(qapp_session, tmp_path, mock_backend, test_paths, test_config)
     appimage.write_text("fake")
 
     wizard = InstallWizard(appimage, mock_backend, test_config, test_paths)
-    
+
     # Check that wizard has expected widgets
     assert hasattr(wizard, "stack")
     assert hasattr(wizard, "name_label")
@@ -115,6 +115,7 @@ def test_dont_ask_again(qapp_session, tmp_path, mock_backend, test_paths, test_c
 
     # Check that config was saved with the entry
     from aurelis_software.core.config import load
+
     saved_config = load(test_paths)
     run_list = saved_config.get("wizard.run_without_asking", [])
     assert len(run_list) == 1

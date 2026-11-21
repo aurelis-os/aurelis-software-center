@@ -101,7 +101,9 @@ def test_flatpak_uninstall(qapp_session, tmp_path, mock_backends, test_paths, te
             mock_flatpak.assert_called_once()
 
 
-def test_pacman_user_with_restart_note(qapp_session, tmp_path, mock_backends, test_paths, test_config):
+def test_pacman_user_with_restart_note(
+    qapp_session, tmp_path, mock_backends, test_paths, test_config
+):
     """Test that pacman user removal shows restart note."""
     cache_dir = test_paths.cache_dir / "aurelis-software"
     cache_dir.mkdir(parents=True)

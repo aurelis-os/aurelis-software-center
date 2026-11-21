@@ -74,8 +74,8 @@ def main(argv=None) -> int:  # noqa: PLR0911
     if argv[0] == "cli":
         return cli_main(argv[1:])
     if argv[0] == "wizard":
-        MIN_WIZARD_ARGS = 3
-        if len(argv) < MIN_WIZARD_ARGS:
+        min_wizard_args = 3
+        if len(argv) < min_wizard_args:
             print("Usage: aurelis-software wizard install|uninstall <path>", file=sys.stderr)
             return 2
         subcommand = argv[1]

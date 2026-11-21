@@ -235,9 +235,7 @@ class InstallWizard(QDialog):
         """Install Flatpak using QProcess."""
         self.flatpak_process = QProcess(self)
         self.flatpak_process.finished.connect(self._on_flatpak_finished)
-        self.flatpak_process.start(
-            "flatpak", ["install", "--user", "-y", str(self.path)]
-        )
+        self.flatpak_process.start("flatpak", ["install", "--user", "-y", str(self.path)])
 
     def _on_flatpak_finished(self, exit_code: int, exit_status) -> None:
         """Handle Flatpak installation completion."""
@@ -294,11 +292,11 @@ class InstallWizard(QDialog):
         data = dict(self.config.data)
         data.setdefault("wizard", {})
         run_list = list(data["wizard"].get("run_without_asking", []))
-        
+
         entry = {"app_id": self.path.name, "sha256": sha256}
         if entry not in run_list:
             run_list.append(entry)
-        
+
         data["wizard"]["run_without_asking"] = run_list
         save(self.paths, Config(data))
 

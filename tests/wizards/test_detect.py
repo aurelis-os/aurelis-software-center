@@ -32,10 +32,7 @@ def test_desktop_entry_with_appimage_managed(tmp_path):
     """Test detection of desktop entry with X-AppImage-Managed=true."""
     desktop_file = tmp_path / "test.desktop"
     desktop_file.write_text(
-        "[Desktop Entry]\n"
-        "Name=Kate Editor\n"
-        "X-AppImage-Managed=true\n"
-        "X-AppImage-Name=kate\n"
+        "[Desktop Entry]\nName=Kate Editor\nX-AppImage-Managed=true\nX-AppImage-Name=kate\n"
     )
 
     result = detect(

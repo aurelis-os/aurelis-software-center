@@ -91,6 +91,10 @@ def _toml_value(value: Any) -> str:
     if isinstance(value, str):
         escaped = value.replace("\\", "\\\\").replace('"', '\\"')
         return f'"{escaped}"'
+    if isinstance(value, dict):
+        # Inline table: {key = "value", key2 = "value2"}
+        items = [f"{k} = {_toml_value(v)}" for k, v in value.items()]
+        return "{" + ", ".join(items) + "}"
     if isinstance(value, list):
         items = [_toml_value(item) for item in value]
         return "[" + ", ".join(items) + "]"
