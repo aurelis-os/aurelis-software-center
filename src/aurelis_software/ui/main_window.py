@@ -41,8 +41,8 @@ from aurelis_software.core.versions import update_available
 from aurelis_software.services.db_updater import DbUpdater, url_fetch
 from aurelis_software.services.downloader import Downloader
 from aurelis_software.services.flathub_index import FlathubIndex
-from aurelis_software.services.pacman_index import PacmanIndex
 from aurelis_software.services.operations import OperationQueue
+from aurelis_software.services.pacman_index import PacmanIndex
 from aurelis_software.services.qt_dbus import DbusClient
 from aurelis_software.services.qt_operations import QtOperationFactory
 from aurelis_software.services.zsync import fetch_update
@@ -695,6 +695,45 @@ class MainWindow(QMainWindow):
         inst.suggest_link = build_origin(match.catalog_app)
         self._installed_by_catalog_id[match.catalog_app.id] = inst
 
+    def _process_catalog_update(self, inst: InstalledApp) -> tuple[bool, bool]:
+        """Check if catalog-based app has update available.
+
+        Returns:
+            (has_update, should_notify) tuple
+        """
+        if not inst.origin:
+            return False, False
+        catalog_app = next(
+            (a for a in self._catalog_apps if a.id == inst.origin.get("catalog_id")), None
+        )
+        if catalog_app and self._update_available_for(inst, catalog_app):
+            inst.update_available = True
+            # Notification count excludes manual, pinned, and self_managed apps
+            should_notify = inst.update_policy not in ("manual", "pinned") and not inst.self_managed
+            return True, should_notify
+        inst.update_available = False
+        return False, False
+
+    def _process_flatpak_cli_updates(self) -> None:
+        """Process Flatpak updates from CLI and add stubs for missing apps."""
+        from aurelis_software.ui.updates_page import _id_of
+
+        flatpak_updates = self._get_flatpak_updates()
+        for upd in flatpak_updates:
+            app_id = _id_of(upd.app_key)
+            if app_id in self._installed_apps:
+                self._installed_apps[app_id].update_available = True
+            else:
+                # Store a stub so the Updates page can show it.
+                stub = InstalledApp(
+                    id=app_id,
+                    source=Source.FLATPAK,
+                    name=app_id,
+                    version=None,
+                )
+                stub.update_available = True
+                self._installed_apps[app_id] = stub
+
     def _recompute_updates(self) -> None:
         """Recompute update availability for all installed apps and update sidebar badge."""
         count = 0
@@ -709,47 +748,20 @@ class MainWindow(QMainWindow):
             if inst.source == Source.PACMAN:
                 # Pacman updates are always empty (pinned repositories).
                 continue
-            if not inst.origin:
-                continue
-            catalog_app = next(
-                (a for a in self._catalog_apps if a.id == inst.origin.get("catalog_id")), None
-            )
-            if catalog_app and self._update_available_for(inst, catalog_app):
-                inst.update_available = True
+            has_update, should_notify = self._process_catalog_update(inst)
+            if has_update:
                 count += 1
-                # Notification count excludes manual, pinned, and self_managed apps
-                if inst.update_policy not in ("manual", "pinned") and not inst.self_managed:
+                if should_notify:
                     notify_count += 1
-            else:
-                inst.update_available = False
 
         # Also count available Flatpak updates from the CLI.
-        flatpak_updates = self._get_flatpak_updates()
-        for upd in flatpak_updates:
-            from aurelis_software.ui.updates_page import _id_of
+        self._process_flatpak_cli_updates()
 
-            app_id = _id_of(upd.app_key)
-            if app_id in self._installed_apps:
-                self._installed_apps[app_id].update_available = True
-            else:
-                # Store a stub so the Updates page can show it.
-                stub = InstalledApp(
-                    id=app_id,
-                    source=Source.FLATPAK,
-                    name=app_id,
-                    version=None,
-                )
-                stub.update_available = True
-                self._installed_apps[app_id] = stub
-            count += 1  # already counted AppImage ones above; guard against dup
-        
         # Merge Pacman updates (will be empty list).
-        try:
-            pacman_updates = self._pacman_backend.list_updates()
-        except Exception:  # noqa: BLE001
-            pacman_updates = []
+        with contextlib.suppress(Exception):
+            self._pacman_backend.list_updates()
         # Pacman updates will always be empty in Aurelis (pinned repos).
-        
+
         # Deduplicate: we may have incremented count twice for the same FLATPAK entry.
         # Recount cleanly.
         count = sum(
@@ -1649,7 +1661,9 @@ class MainWindow(QMainWindow):
             self._detail.operation_finished.emit(
                 op_id, type("Result", (), {"ok": True, "error": None})()
             )
-            show_toast(self.tr("{name} queued for installation").format(name=app.name), "success", self)
+            show_toast(
+                self.tr("{name} queued for installation").format(name=app.name), "success", self
+            )
             # Show PendingRebootBanner after successful install
             self._show_pending_reboot_banner()
             self._refresh_installed_list()
@@ -1659,7 +1673,9 @@ class MainWindow(QMainWindow):
             if op.result:
                 error_msg = op.result.error or "Unknown error"
                 self._detail.operation_failed(error_msg, op.result.details, "")
-                show_toast(self.tr("Install failed: {error}").format(error=error_msg), "error", self)
+                show_toast(
+                    self.tr("Install failed: {error}").format(error=error_msg), "error", self
+                )
 
     def _on_remove_pacman(self, inst: InstalledApp) -> None:
         """Handle Pacman package removal via backend Operation."""
@@ -1687,7 +1703,7 @@ class MainWindow(QMainWindow):
             self._active_operations.pop(op_id, None)
             if op.result:
                 error_msg = op.result.error or "Unknown error"
-                
+
                 # Check for ConflictPending error
                 if error_msg == "ConflictPending":
                     msg_box = QMessageBox(self)
@@ -1702,7 +1718,9 @@ class MainWindow(QMainWindow):
                     msg_box.exec()
                 else:
                     self._detail.operation_failed(error_msg, op.result.details, "")
-                    show_toast(self.tr("Remove failed: {error}").format(error=error_msg), "error", self)
+                    show_toast(
+                        self.tr("Remove failed: {error}").format(error=error_msg), "error", self
+                    )
 
     def _on_open_requested(self, app_id: str) -> None:
         """Launch the app via appimage run."""

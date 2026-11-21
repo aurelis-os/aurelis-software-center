@@ -7,7 +7,7 @@ ConflictPending errors with a QMessageBox warning.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from PyQt6.QtWidgets import QMessageBox
@@ -18,7 +18,6 @@ from aurelis_software.core.models import InstalledApp, Source
 from aurelis_software.core.paths import Paths
 from aurelis_software.ui.banners import PendingRebootBanner
 from aurelis_software.ui.main_window import MainWindow
-
 
 # ---------------------------------------------------------------------------
 # Fake PacmanBackend
@@ -233,23 +232,30 @@ def test_pacman_remove_conflict_shows_warning(qtbot, tmp_path, monkeypatch):
         mock_backend_cls.return_value = fake_backend
         with patch("aurelis_software.ui.main_window.PacmanIndex") as mock_index_cls:
             mock_index_cls.return_value = FakePacmanIndex(paths.pacman_db, paths.pacman_sync_dir)
+
             window = MainWindow(paths, config)
             qtbot.addWidget(window)
 
             window._refresh_pacman_installed()
 
-            # Mock QMessageBox to verify it was called
-            with patch.object(QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes):
-                # Mock QMessageBox constructor to avoid blocking exec()
-                with patch.object(QMessageBox, "__init__", return_value=None):
-                    with patch.object(QMessageBox, "exec", return_value=QMessageBox.StandardButton.Ok):
-                        # Trigger remove
-                        window._on_remove_requested("libfoo")
-                        # Process events to let the operation complete
-                        qtbot.wait(100)
+            # Patch QMessageBox methods individually
+            with (
+                patch.object(
+                    QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
+                ) as mock_question,
+                patch.object(
+                    QMessageBox, "exec", return_value=QMessageBox.StandardButton.Ok
+                ) as mock_exec,
+            ):
+                # Trigger remove
+                window._on_remove_requested("libfoo")
+                # Process events to let the operation complete
+                qtbot.wait(100)
 
-                        # Verify that QMessageBox was created (this is good enough for now)
-                        # The actual QMessageBox creation happens inside _on_remove_pacman
+                # Verify that question was called for confirmation
+                assert mock_question.called
+                # Verify that exec was called for the error dialog
+                assert mock_exec.called
 
 
 def test_pending_reboot_banner_shown_after_pacman_operation(qtbot, tmp_path, fake_pacman_backend):
