@@ -10,6 +10,18 @@ See `docs/aurelis-software-gui-spec.md` for the full specification.
 
 Phases 0-8 complete. Version 1.0.0 ready for release.
 
+## Installation
+
+### Quick Install (Arch Linux)
+
+```bash
+./install.sh
+```
+
+The installer will check dependencies, install missing packages, and set up desktop integration.
+
+See [INSTALL.md](INSTALL.md) for detailed installation instructions and troubleshooting.
+
 ## Performance
 
 Performance budgets (all met):

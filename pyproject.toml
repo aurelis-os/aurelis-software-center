@@ -7,6 +7,11 @@ dependencies = [
     "PyQt6>=6.6",
 ]
 
+[project.scripts]
+aurelis-software = "aurelis_software.__main__:main"
+aurelis-software-wizard-install = "aurelis_software.cli:wizard_install"
+aurelis-software-wizard-uninstall = "aurelis_software.cli:wizard_uninstall"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8",

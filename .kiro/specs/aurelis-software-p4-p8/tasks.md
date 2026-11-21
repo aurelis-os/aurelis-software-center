@@ -289,32 +289,32 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - Run `./check`; paste real output
     - **Stop here for owner review before starting Phase 8**
 
-- [ ] 5. Phase 8 — Polish and release
+- [x] 5. Phase 8 — Polish and release
 
-  - [ ] 5.1 Polish the Explore page
+  - [x] 5.1 Polish the Explore page
     - Add or refactor `ui/explore_page.py` (or update `main_window.py`'s explore layout)
     - Layout: (1) "Recently updated" horizontal scroll row — top 6 by `version_changed_at`; (2) per-category horizontal scroll rows (only categories with ≥ 1 app); (3) "All apps" full grid
     - Category rows reuse `AppCardDelegate`; icons lazy-loaded
     - _Requirements: R25.1_
 
-  - [ ] 5.2 Add Greek translation
+  - [x] 5.2 Add Greek translation
     - Run `pylupdate6 src/aurelis_software/ -ts src/aurelis_software/resources/i18n/el.ts`
     - Translate all strings in `el.ts` to Greek
     - Compile: `lrelease src/aurelis_software/resources/i18n/el.ts -qm src/aurelis_software/resources/i18n/el.qm`
     - In `app.py`, load `QTranslator` for the configured `ui.language`; language selector in Settings triggers reload
     - _Requirements: R26.1, R26.2_
 
-  - [ ]* 5.3 Write a layout stress test for Greek strings
+  - [ ]* 5.3 Write a layout stress test for Greek strings (DEFERRED - low risk, Qt handles layout)
     - For each dialog and page, instantiate offscreen with the Greek `QTranslator` active; assert no widget is clipped (width > 0, text not truncated by `elideMode`)
     - _Requirements: R26.2_
 
-  - [ ] 5.4 Accessibility pass
+  - [x] 5.4 Accessibility pass
     - Add `setAccessibleName(...)` to every button, label carrying semantic meaning, badge, and progress bar in `ui/` and `wizards/` that does not already have one
     - Verify Tab order traverses interactive elements without skipping in main window, detail page, updates page, settings dialog, install wizard, uninstall wizard
     - In `theme.py`, add `assert_badge_contrast()` that checks all badge foreground/background pairs against WCAG AA (4.5:1 ratio); call it from a test
     - _Requirements: R27.1, R27.2, R27.3, R27.4_
 
-  - [ ] 5.5 Performance pass
+  - [x] 5.5 Performance pass
     - Add `tests/test_performance.py` with timed assertions for each budget:
       - Catalog parse 500 synthetic apps < 100 ms
       - Search keystroke on 500 apps < 50 ms
@@ -322,23 +322,23 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - Run the full app against the fixture on the owner's machine and record results in `README.md`
     - _Requirements: R28.1_
 
-  - [ ] 5.6 Write `packaging/PKGBUILD`
+  - [x] 5.6 Write `packaging/PKGBUILD`
     - Set `pkgname=aurelis-software`, `depends=(python python-pyqt6 appimage-launcher)`, `makedepends=(python-build python-installer)`
     - Install `.desktop` files from `resources/` and icon
     - Add a CI step (or Makefile target) that runs `makepkg --nobuild` to validate PKGBUILD syntax
     - _Requirements: R29.1_
 
-  - [ ]* 5.7 Write a PKGBUILD validation test
+  - [ ]* 5.7 Write a PKGBUILD validation test (DEFERRED - manual check sufficient)
     - In `tests/` add a test that runs `desktop-file-validate` on all installed `.desktop` files and checks PKGBUILD `pkgver` matches `src/aurelis_software/__init__.py` `__version__`
     - _Requirements: R29.1, R29.2_
 
-  - [ ] 5.8 Release checklist tasks (coding-agent scope only)
+  - [x] 5.8 Release checklist tasks (coding-agent scope only)
     - Bump `__version__` in `src/aurelis_software/__init__.py` and `packaging/PKGBUILD` to match
     - Add a `CHANGELOG.md` entry for the release with phase summary
     - Confirm `./check` passes with zero failures and zero ruff warnings
     - _Requirements: R29.2_
 
-  - [ ] 5.9 Phase 8 final checkpoint — run `./check` and confirm all tests pass
+  - [x] 5.9 Phase 8 final checkpoint — run `./check` and confirm all tests pass
     - Run `./check`; paste real output
     - List every performance budget result measured
     - List any items deferred to a future release
