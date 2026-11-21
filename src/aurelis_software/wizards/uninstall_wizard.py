@@ -120,6 +120,7 @@ class UninstallWizard(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addStretch()
         close_button = QPushButton(self.tr("Close"))
+        close_button.setAccessibleName(self.tr("Close"))
         close_button.clicked.connect(self.reject)
         button_layout.addWidget(close_button)
         layout.addLayout(button_layout)
@@ -143,6 +144,7 @@ class UninstallWizard(QDialog):
         button_layout = QHBoxLayout()
         button_layout.addStretch()
         close_button = QPushButton(self.tr("Close"))
+        close_button.setAccessibleName(self.tr("Close"))
         close_button.clicked.connect(self.reject)
         button_layout.addWidget(close_button)
         layout.addLayout(button_layout)
@@ -204,10 +206,12 @@ class UninstallWizard(QDialog):
         button_layout.addStretch()
 
         remove_button = QPushButton(self.tr("Remove"))
+        remove_button.setAccessibleName(self.tr("Remove"))
         remove_button.clicked.connect(self._on_remove)
         button_layout.addWidget(remove_button)
 
         cancel_button = QPushButton(self.tr("Cancel"))
+        cancel_button.setAccessibleName(self.tr("Cancel"))
         cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(cancel_button)
 
@@ -239,6 +243,7 @@ class UninstallWizard(QDialog):
         button_layout.addStretch()
 
         self.done_button = QPushButton(self.tr("Done"))
+        self.done_button.setAccessibleName(self.tr("Done"))
         self.done_button.setEnabled(False)
         self.done_button.clicked.connect(self.accept)
         button_layout.addWidget(self.done_button)

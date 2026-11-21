@@ -1,0 +1,18 @@
+/home/user/.local/lib/python3.14/site-packages/pytest_asyncio/plugin.py:306: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session". Set it to "fixture-scope" to keep the current behavior.
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+.......................................................s................ [ 19%]
+........................................................................ [ 38%]
+........................................................................ [ 57%]
+.......................s................................................ [ 76%]
+.....................F..............................................s... [ 96%]
+...............                                                          [100%]
+=================================== FAILURES ===================================
+E   AttributeError: 'ExplorePage' object has no attribute '_update_grid_size'
+----------------------------- Captured Qt messages -----------------------------
+QtWarningMsg: Could not parse stylesheet of object Banner(0x561655827c10, name = "Banner")
+/home/user/Projects/aurelis-software-center/tests/ui/test_main_window.py:412: AttributeError: 'ExplorePage' object has no attribute '_update_grid_size'
+=========================== short test summary info ============================
+FAILED tests/ui/test_main_window.py::test_reflow_vertical_content_exceeds_viewport
+1 failed, 371 passed, 3 skipped in 200.45s (0:03:20)

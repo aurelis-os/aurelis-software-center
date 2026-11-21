@@ -1,0 +1,27 @@
+{
+  "verdict": "CHANGES_REQUESTED",
+  "findings": [
+    {
+      "issue": "Wizard accessibility gap",
+      "description": "Install and uninstall wizards lack setAccessibleName on all buttons (Install, Just run, Cancel, Remove, Done, Open, Close). Task 5.4 step 10 explicitly lists wizards/ as files to audit; grep confirms no setAccessibleName calls in wizards/.",
+      "action": "Add accessible names to every QPushButton in install_wizard.py and uninstall_wizard.py matching the button text.",
+      "confidence": "confirmed",
+      "severity": "blocking"
+    },
+    {
+      "issue": "Tab order unverified",
+      "description": "Task 5.4 step 11 requires verifying Tab order across six UI containers. verification.txt claims 'manually tested' but no setTabOrder() calls exist in the codebase, and no automated test verifies traversal order.",
+      "action": "Either add explicit setTabOrder() calls where default order is wrong, or add a test that programmatically walks the Tab chain and asserts logical order.",
+      "confidence": "likely",
+      "severity": "blocking"
+    },
+    {
+      "issue": "PKGBUILD icon installation incomplete",
+      "description": "packaging/PKGBUILD comments out the icon installation line with 'placeholder - would need actual icon file'. Task 5.6 step 18 specifies installing an icon to /usr/share/icons/hicolor/.",
+      "action": "Either provide a real icon file (aurelis-software.png or .svg) in resources/ and uncomment the install line, or document in deferred.md that icon installation is post-1.0 and the .desktop Icon= field will resolve to a fallback until then.",
+      "confidence": "confirmed",
+      "severity": "blocking"
+    }
+  ],
+  "reviewDoc": "/home/user/Projects/aurelis-software-center/.agents/tasks/phase8-release/review.md"
+}

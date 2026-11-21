@@ -46,3 +46,7 @@ docs/screenshots/
 # MyPy
 .mypy_cache/
 *.pyc
+
+
+.kiro/
+

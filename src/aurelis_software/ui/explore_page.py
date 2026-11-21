@@ -184,3 +184,25 @@ class ExplorePage(QWidget):
         app = self._all_apps_view.current_app()
         if app:
             self.selection_changed.emit(app)
+
+    @property
+    def _model(self):
+        """Expose the underlying model for backward compatibility with tests."""
+        return self._all_apps_view._model
+
+    @property
+    def _view(self):
+        """Expose the underlying view for backward compatibility with tests."""
+        return self._all_apps_view._view
+
+    def _update_grid_size(self) -> None:
+        """Update grid size - delegates to all_apps_view."""
+        self._all_apps_view._update_grid_size()
+
+    def scroll_to_top(self) -> None:
+        """Scroll to the top of the page."""
+        # Find the scroll area and scroll to top
+        for child in self.children():
+            if isinstance(child, QScrollArea):
+                child.verticalScrollBar().setValue(0)
+                break

@@ -1,0 +1,35 @@
+/home/user/.local/lib/python3.14/site-packages/pytest_asyncio/plugin.py:306: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to "function" scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session". Set it to "fixture-scope" to keep the current behavior.
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+.......................................................s................ [ 19%]
+........................................................................ [ 38%]
+........................................................................ [ 57%]
+.......................s................................................ [ 76%]
+........F
+=================================== FAILURES ===================================
+CALL ERROR: Exceptions caught in Qt event loop:
+________________________________________________________________________________
+Traceback (most recent call last):
+  File "/home/user/Projects/aurelis-software-center/src/aurelis_software/ui/main_window.py", line 923, in _run_search
+    self._explore.scroll_to_top()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'ExplorePage' object has no attribute 'scroll_to_top'
+________________________________________________________________________________
+
+----------------------------- Captured Qt messages -----------------------------
+QtWarningMsg: Could not parse stylesheet of object Banner(0x565244bcfb50, name = "Banner")
+----------------------------- Captured stderr call -----------------------------
+Exceptions caught in Qt event loop:
+________________________________________________________________________________
+Traceback (most recent call last):
+  File "/home/user/Projects/aurelis-software-center/src/aurelis_software/ui/main_window.py", line 923, in _run_search
+    self._explore.scroll_to_top()
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'ExplorePage' object has no attribute 'scroll_to_top'
+________________________________________________________________________________
+/home/user/.local/lib/python3.14/site-packages/pytestqt/exceptions.py:74: Failed: CALL ERROR: Exceptions caught in Qt event loop:
+=========================== short test summary info ============================
+FAILED tests/ui/test_main_window.py::test_search_debounce_updates_proxy - Fai...
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 294 passed, 2 skipped in 17.19s

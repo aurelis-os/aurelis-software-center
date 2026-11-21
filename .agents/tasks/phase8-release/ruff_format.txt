@@ -1,0 +1,18 @@
+unformatted: File would be reformatted
+  --> src/aurelis_software/ui/app.py:67:1
+   |
+66 |         qm_path = os.path.join(module_dir, "resources", "i18n", f"{language}.qm")
+   -         
+67 +
+68 |         if translator.load(str(qm_path)):
+   |
+
+unformatted: File would be reformatted
+   --> tests/ui/test_accessibility.py:167:1
+    |
+166 |     return visited
+    -
+    |
+
+2 files would be reformatted, 99 files already formatted
+Exit: 1

@@ -141,19 +141,23 @@ class InstallWizard(QDialog):
         button_layout = QHBoxLayout()
 
         self.install_button = QPushButton(self.tr("Install"))
+        self.install_button.setAccessibleName(self.tr("Install"))
         self.install_button.clicked.connect(self._on_install)
         button_layout.addWidget(self.install_button)
 
         just_run_layout = QVBoxLayout()
         self.just_run_button = QPushButton(self.tr("Just run"))
+        self.just_run_button.setAccessibleName(self.tr("Just run"))
         self.just_run_button.clicked.connect(self._on_just_run)
         just_run_layout.addWidget(self.just_run_button)
 
         self.dont_ask_checkbox = QCheckBox(self.tr("Don't ask again"))
+        self.dont_ask_checkbox.setAccessibleName(self.tr("Don't ask again for this application"))
         just_run_layout.addWidget(self.dont_ask_checkbox)
         button_layout.addLayout(just_run_layout)
 
         self.cancel_button = QPushButton(self.tr("Cancel"))
+        self.cancel_button.setAccessibleName(self.tr("Cancel"))
         self.cancel_button.clicked.connect(self.reject)
         button_layout.addWidget(self.cancel_button)
 
@@ -185,11 +189,13 @@ class InstallWizard(QDialog):
         button_layout.addStretch()
 
         self.open_button = QPushButton(self.tr("Open"))
+        self.open_button.setAccessibleName(self.tr("Open"))
         self.open_button.setEnabled(False)
         self.open_button.clicked.connect(self._on_open)
         button_layout.addWidget(self.open_button)
 
         self.close_button = QPushButton(self.tr("Close"))
+        self.close_button.setAccessibleName(self.tr("Close"))
         self.close_button.clicked.connect(self.accept)
         button_layout.addWidget(self.close_button)
 

@@ -57,15 +57,14 @@ def main(argv: list[str] | None = None) -> int:
     translator = None
     if language != "en":
         translator = QTranslator()
-        qm_path = paths.data_dir / "resources" / "i18n" / f"{language}.qm"
-        # Also check installed location
-        if not qm_path.exists():
-            import os
+        # Check installed location (module resources directory)
+        import os
 
-            import aurelis_software
+        import aurelis_software
 
-            module_dir = os.path.dirname(aurelis_software.__file__)
-            qm_path = os.path.join(module_dir, "resources", "i18n", f"{language}.qm")
+        module_dir = os.path.dirname(aurelis_software.__file__)
+        qm_path = os.path.join(module_dir, "resources", "i18n", f"{language}.qm")
+
         if translator.load(str(qm_path)):
             app.installTranslator(translator)
         # Keep reference to prevent garbage collection

@@ -1,0 +1,35 @@
+F401 [*] `pathlib.Path` imported but unused
+ --> tests/ui/test_accessibility.py:5:21
+  |
+3 | from __future__ import annotations
+4 |
+5 | from pathlib import Path
+  |                     ^^^^
+6 | from unittest.mock import MagicMock
+  |
+help: Remove unused import: `pathlib.Path`
+  |
+4 |
+  - from pathlib import Path
+5 | from unittest.mock import MagicMock
+  |
+
+F401 [*] `PyQt6.QtWidgets.QApplication` imported but unused
+  --> tests/ui/test_accessibility.py:9:29
+   |
+ 8 | from PyQt6.QtCore import Qt
+ 9 | from PyQt6.QtWidgets import QApplication
+   |                             ^^^^^^^^^^^^
+10 |
+11 | from aurelis_software.core.config import Config
+   |
+help: Remove unused import: `PyQt6.QtWidgets.QApplication`
+  |
+8 | from PyQt6.QtCore import Qt
+  - from PyQt6.QtWidgets import QApplication
+9 |
+  |
+
+Found 2 errors.
+[*] 2 fixable with `--fix`.
+Exit: 1
