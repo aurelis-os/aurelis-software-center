@@ -1,0 +1,36 @@
+# Maintainer: Aurelis Team
+pkgname=aurelis-software
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Aurelis Software Center — PyQt6 software center and wizards"
+arch=('any')
+url="https://github.com/aurelis/aurelis-software-center"
+license=('custom')
+depends=('python' 'python-pyqt6' 'appimage-launcher')
+makedepends=('python-build' 'python-installer' 'python-hatchling')
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$srcdir/$pkgname-$pkgver"
+    python -m build --wheel --no-isolation
+}
+
+package() {
+    cd "$srcdir/$pkgname-$pkgver"
+    
+    # Install Python package
+    python -m installer --destdir="$pkgdir" dist/*.whl
+    
+    # Install .desktop files
+    install -Dm644 resources/aurelis-software.desktop \
+        "$pkgdir/usr/share/applications/aurelis-software.desktop"
+    install -Dm644 resources/aurelis-software-wizard-install.desktop \
+        "$pkgdir/usr/share/applications/aurelis-software-wizard-install.desktop"
+    install -Dm644 resources/aurelis-software-uninstall.desktop \
+        "$pkgdir/usr/share/applications/aurelis-software-uninstall.desktop"
+    
+    # Install icon (placeholder - would need actual icon file)
+    # install -Dm644 resources/aurelis-software.png \
+    #     "$pkgdir/usr/share/icons/hicolor/128x128/apps/aurelis-software.png"
+}

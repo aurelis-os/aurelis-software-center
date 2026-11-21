@@ -50,6 +50,7 @@ from aurelis_software.ui.app_list_view import AppListView
 from aurelis_software.ui.banners import Banner, PendingRebootBanner
 from aurelis_software.ui.conflict_dialog import ConflictDialog, UnverifiedDownloadDialog
 from aurelis_software.ui.detail_page import DetailPage
+from aurelis_software.ui.explore_page import ExplorePage
 from aurelis_software.ui.progress_widgets import show_toast
 from aurelis_software.ui.settings_dialog import SettingsDialog
 from aurelis_software.ui.sidebar import (
@@ -169,7 +170,7 @@ class MainWindow(QMainWindow):
 
         # Page stack
         self._stack = QStackedWidget()
-        self._explore = AppListView(icons_dir=paths.icons_dir)
+        self._explore = ExplorePage(icons_dir=paths.icons_dir)
         from aurelis_software.ui.installed_page import InstalledPage
 
         self._installed = InstalledPage(icons_dir=paths.icons_dir)
@@ -197,7 +198,7 @@ class MainWindow(QMainWindow):
         # ── Wiring ─────────────────────────────────────────────────────────
         self._sidebar.item_selected.connect(self._on_section)
         self._search.textChanged.connect(self._on_search_text_changed)
-        self._explore.selection_changed(self._on_selection_changed)
+        self._explore.selection_changed.connect(self._on_selection_changed)
         self._installed.selection_changed(self._on_installed_selection)
         self._detail.install_requested.connect(self._on_install_requested)
         self._detail.update_requested.connect(self._on_update_requested)
@@ -1075,8 +1076,9 @@ class MainWindow(QMainWindow):
         # For now, just show a simple list - this may need adjustment based on AppListView implementation
         self._stack.setCurrentWidget(self._pacman_page)
 
-    def _on_selection_changed(self) -> None:
-        app = self._explore.current_app()
+    def _on_selection_changed(self, app: App | None = None) -> None:
+        if app is None:
+            app = self._explore.current_app()
         if app is None:
             return
         installed = self._installed_apps.get(app.id)
@@ -1881,6 +1883,7 @@ class _Toolbar(QWidget):
 
         self.search_edit = QLineEdit()
         self.search_edit.setPlaceholderText("Search apps…")
+        self.search_edit.setAccessibleName("Search apps")
         self.search_edit.setClearButtonEnabled(True)
         self.search_edit.setFixedHeight(32)
         self.search_edit.setFixedWidth(260)

@@ -18,17 +18,16 @@ States captured:
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
 import tarfile
-import json
 import tempfile
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QTimer
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QApplication
 

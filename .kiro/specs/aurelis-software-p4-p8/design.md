@@ -16,8 +16,8 @@ Language: **Python 3.11+** with PyQt6, matching the existing codebase.
 
 ```python
 def on_error(err):
-    _active_operations.pop(op_id, None)   # pop FIRST
-    _recompute_updates()                   # then recompute
+    _active_operations.pop(op_id, None)  # pop FIRST
+    _recompute_updates()  # then recompute
     ...
 ```
 
@@ -43,7 +43,7 @@ Emit `progress(step="handoff")` before the D-Bus `Install` call so the UI shows 
 
 ```python
 class UpdatesPage(QWidget):
-    update_requested = pyqtSignal(str)   # app_key
+    update_requested = pyqtSignal(str)  # app_key
     update_all_requested = pyqtSignal()
 
     def populate(self, updates: list[UpdateInfo], installed: dict[str, InstalledApp]) -> None: ...
@@ -72,8 +72,8 @@ A `QSystemTrayIcon`-less desktop notification is sent via `QDBusMessage` to `org
 ```python
 class FlathubIndex:
     def __init__(self, db_path: Path, appstream_path: Path, locale: str = "en") -> None: ...
-    def needs_rebuild(self) -> bool: ...          # checks mtime
-    def rebuild(self, progress_cb) -> None: ...   # runs in worker
+    def needs_rebuild(self) -> bool: ...  # checks mtime
+    def rebuild(self, progress_cb) -> None: ...  # runs in worker
     def search(self, query: str, limit: int, offset: int) -> list[dict]: ...
     def get(self, app_id: str) -> dict | None: ...
     def categories(self) -> list[str]: ...
@@ -110,19 +110,35 @@ class FlatpakBackend(Backend):
 `CommandRunner` is the existing injection interface used by `qt_process.py`. All commands are argument lists, never shell strings.
 
 ```python
-LIST_INSTALLED_CMD = ["flatpak", "list", "--user", "--app",
-                      "--columns=application,version,origin"]
-LIST_UPDATES_CMD   = ["flatpak", "remote-ls", "--user", "--updates",
-                      "--app", "--columns=application,version"]
-INSTALL_CMD        = lambda app_id: ["flatpak", "install", "--user",
-                                     "--noninteractive", "-y", "flathub", app_id]
-REMOVE_CMD         = lambda app_id: ["flatpak", "uninstall", "--user",
-                                     "--noninteractive", "-y", app_id]
-UPDATE_CMD         = lambda app_id: ["flatpak", "update", "--user",
-                                     "--noninteractive", "-y", app_id]
-ADD_REMOTE_CMD     = ["flatpak", "remote-add", "--user", "--if-not-exists",
-                      "flathub", "https://dl.flathub.org/repo/flathub.flatpakrepo"]
-REFRESH_APPSTREAM  = ["flatpak", "update", "--appstream", "--user"]
+LIST_INSTALLED_CMD = ["flatpak", "list", "--user", "--app", "--columns=application,version,origin"]
+LIST_UPDATES_CMD = [
+    "flatpak",
+    "remote-ls",
+    "--user",
+    "--updates",
+    "--app",
+    "--columns=application,version",
+]
+INSTALL_CMD = lambda app_id: [
+    "flatpak",
+    "install",
+    "--user",
+    "--noninteractive",
+    "-y",
+    "flathub",
+    app_id,
+]
+REMOVE_CMD = lambda app_id: ["flatpak", "uninstall", "--user", "--noninteractive", "-y", app_id]
+UPDATE_CMD = lambda app_id: ["flatpak", "update", "--user", "--noninteractive", "-y", app_id]
+ADD_REMOTE_CMD = [
+    "flatpak",
+    "remote-add",
+    "--user",
+    "--if-not-exists",
+    "flathub",
+    "https://dl.flathub.org/repo/flathub.flatpakrepo",
+]
+REFRESH_APPSTREAM = ["flatpak", "update", "--appstream", "--user"]
 ```
 
 Progress: indeterminate `QProgressBar` during any operation (the CLI output is too coarse for a fraction).
@@ -197,6 +213,7 @@ class DetectionResult:
     id: str | None
     name: str | None
 
+
 def detect(
     path: str,
     *,
@@ -204,7 +221,7 @@ def detect(
     flatpak_export_dirs: tuple[Path, ...],
     core_packages_path: Path,
     user_packages_path: Path,
-    list_runner: Callable[[list[str]], str],   # injected; runs pacman -Qo etc.
+    list_runner: Callable[[list[str]], str],  # injected; runs pacman -Qo etc.
 ) -> DetectionResult: ...
 ```
 
@@ -214,8 +231,9 @@ Pure Python, no Qt, no subprocess side effects (all I/O injected).
 
 ```python
 class InstallWizard(QDialog):
-    def __init__(self, path: Path, backend: AppImageBackend | FlatpakBackend,
-                 config: Config, paths: Paths) -> None: ...
+    def __init__(
+        self, path: Path, backend: AppImageBackend | FlatpakBackend, config: Config, paths: Paths
+    ) -> None: ...
 ```
 
 Routing: if `Inspect(path).relation` is `"installed"` and the path is inside `applications_dir`, call `appimage run <managed_name>` via `QProcess.startDetached` and exit immediately with no UI.
@@ -229,8 +247,9 @@ Page 2: spinner + status label, non-interactive until done.
 
 ```python
 class UninstallWizard(QDialog):
-    def __init__(self, path_or_desktop_id: str, backends: dict[Source, Backend],
-                 config: Config, paths: Paths) -> None: ...
+    def __init__(
+        self, path_or_desktop_id: str, backends: dict[Source, Backend], config: Config, paths: Paths
+    ) -> None: ...
 ```
 
 Calls `wizards/detect.py` first. System packages: static refusal page. Others: Page 1 (confirm) → Page 2 (progress).

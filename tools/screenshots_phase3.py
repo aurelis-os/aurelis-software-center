@@ -20,12 +20,12 @@ Screenshots captured (at 1100x720 and 800x600):
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
-import json
-import tempfile
 import tarfile
+import tempfile
 from pathlib import Path
 
 # Add project root to path
@@ -33,17 +33,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt6.QtCore import QTimer, QEventLoop
-from PyQt6.QtTest import QTest
-from PyQt6.QtWidgets import QApplication, QDialog
+from PyQt6.QtCore import QEventLoop, QTimer
 from PyQt6.QtDBus import QDBusConnection
+from PyQt6.QtTest import QTest
+from PyQt6.QtWidgets import QApplication
 
 from aurelis_software.core.config import Config
-from aurelis_software.core.models import App, Source, InstalledApp
+from aurelis_software.core.models import App, InstalledApp, Source
 from aurelis_software.core.paths import Paths
-from aurelis_software.core.versions import update_available
-from aurelis_software.ui.main_window import MainWindow
 from aurelis_software.ui.conflict_dialog import ConflictDialog, ConflictInfo
+from aurelis_software.ui.main_window import MainWindow
 from tests.backends.fake_manager1 import FakeManager1
 
 OUT = Path(__file__).resolve().parent.parent / "docs" / "screenshots" / "phase3"
@@ -221,7 +220,7 @@ def main() -> int:
     bus = QDBusConnection.connectToBus(bus_address, "aurelis-screenshots")
     assert bus.isConnected(), f"Could not connect to private session bus: {bus_address}"
 
-    fake = FakeManager1(bus)
+    FakeManager1(bus)
 
     print("Creating MainWindow with fake daemon...")
     paths = _make_paths(REAL_DB)
@@ -277,7 +276,6 @@ def main() -> int:
     window._stack.setCurrentWidget(window._detail)
     window._detail.start_operation("dl-test", "install")
     # Simulate download progress at 42%
-    from aurelis_software.backends.base import OperationEvent
 
     event = type(
         "Event", (), {"step": "download", "fraction": 0.42, "message": "Downloading… 42%"}
@@ -347,10 +345,10 @@ def main() -> int:
     # --- 6-9. Error states ---
     print("\n=== 6-9. Error states ===")
     from aurelis_software.core.errors import (
-        NetworkError,
         ChecksumMismatch,
-        DiskFull,
         DaemonUnavailable,
+        DiskFull,
+        NetworkError,
     )
 
     error_cases = [

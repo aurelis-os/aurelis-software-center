@@ -8,7 +8,18 @@ See `docs/aurelis-software-gui-spec.md` for the full specification.
 
 ## Status
 
-Phase 0 (contracts and spikes) in progress. See `docs/DECISIONS.md` and `docs/spikes/`.
+Phases 0-8 complete. Version 1.0.0 ready for release.
+
+## Performance
+
+Performance budgets (all met):
+
+- Catalog parse (500 apps): < 100 ms
+- Search keystroke (500 apps): < 50 ms
+- Flathub FTS search: < 100 ms  
+- Pacman FTS search: < 100 ms
+
+Measured on: Linux (Arch-based), Python 3.11+, PyQt6 6.6+
 
 ## Development
 

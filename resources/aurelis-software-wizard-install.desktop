@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Install Application
+Comment=Install wizard for AppImage and Flatpak files
+Exec=aurelis-software-wizard-install %F
+Icon=aurelis-software
+Categories=System;
+NoDisplay=true
+MimeType=application/vnd.appimage;application/vnd.flatpak.ref;application/vnd.flatpak;
+Terminal=false

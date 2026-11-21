@@ -1,6 +1,6 @@
 [project]
 name = "aurelis-software"
-version = "0.1.0"
+version = "1.0.0"
 description = "Aurelis Software Center — PyQt6 software center and wizards"
 requires-python = ">=3.11"
 dependencies = [

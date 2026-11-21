@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-from PyQt6.QtCore import QTimer
+from PyQt6.QtCore import QTimer, QTranslator
 from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtWidgets import QApplication
 
@@ -51,6 +51,25 @@ def main(argv: list[str] | None = None) -> int:
 
     paths = Paths.xdg()
     config = load(paths)
+
+    # Load translator for configured language (R26.1)
+    language = config.get("ui.language", "en")
+    translator = None
+    if language != "en":
+        translator = QTranslator()
+        qm_path = paths.data_dir / "resources" / "i18n" / f"{language}.qm"
+        # Also check installed location
+        if not qm_path.exists():
+            import os
+
+            import aurelis_software
+
+            module_dir = os.path.dirname(aurelis_software.__file__)
+            qm_path = os.path.join(module_dir, "resources", "i18n", f"{language}.qm")
+        if translator.load(str(qm_path)):
+            app.installTranslator(translator)
+        # Keep reference to prevent garbage collection
+        app._translator = translator
 
     window = MainWindow(paths, config)
     window.show()

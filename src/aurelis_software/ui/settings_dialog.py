@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import (
     QCheckBox,
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QGridLayout,
@@ -11,6 +12,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -57,6 +59,22 @@ class SettingsDialog(QDialog):
 
         ui_box = QGroupBox(self.tr("Interface"))
         ui_layout = QVBoxLayout(ui_box)
+
+        # Language selector (R26.2)
+        lang_layout = QHBoxLayout()
+        lang_layout.addWidget(QLabel(self.tr("Language:")))
+        self.language_combo = QComboBox()
+        self.language_combo.addItem(self.tr("English"), "en")
+        self.language_combo.addItem("Ελληνικά", "el")
+        current_lang = self.config.get("ui.language", "en")
+        lang_index = self.language_combo.findData(current_lang)
+        if lang_index >= 0:
+            self.language_combo.setCurrentIndex(lang_index)
+        self.language_combo.currentIndexChanged.connect(self._on_language_changed)
+        lang_layout.addWidget(self.language_combo)
+        lang_layout.addStretch()
+        ui_layout.addLayout(lang_layout)
+
         self.offline = QCheckBox(self.tr("Offline mode"))
         self.offline.setChecked(bool(self.config.get("network.offline")))
         ui_layout.addWidget(self.offline)
@@ -138,6 +156,20 @@ class SettingsDialog(QDialog):
             self.config = Config(data)
             save(self.paths, self.config)
             self._populate_run_without_asking()
+
+    def _on_language_changed(self, index: int) -> None:
+        """Handle language change."""
+        language_code = self.language_combo.itemData(index)
+        if language_code != self.config.get("ui.language", "en"):
+            data = dict(self.config.data)
+            data.setdefault("ui", {})["language"] = language_code
+            self.config = Config(data)
+            save(self.paths, self.config)
+            QMessageBox.information(
+                self,
+                self.tr("Language Changed"),
+                self.tr("Restart the application to apply the new language."),
+            )
 
     def _save(self) -> None:
         data = dict(self.config.data)

@@ -11,7 +11,6 @@ Usage:
 from __future__ import annotations
 
 import os
-import platform
 import shutil
 import subprocess
 import sys
@@ -57,7 +56,7 @@ except ImportError as exc:
     print(f"PyQt6: IMPORT ERROR — {exc}")
 
 try:
-    from PyQt6.QtDBus import QDBusConnection  # noqa: F401
+    from PyQt6.QtDBus import QDBusConnection
 
     print("QtDBus: importable")
 except ImportError as exc:

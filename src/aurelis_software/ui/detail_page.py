@@ -694,6 +694,7 @@ class DetailPage(QWidget):
         self, text: str, color: str, callback, *, enabled: bool = True, style: str = "filled"
     ) -> QPushButton:
         btn = QPushButton(text)
+        btn.setAccessibleName(text)
         btn.setEnabled(enabled)
         btn.setMinimumSize(80, 36)
         btn.setMaximumWidth(200)

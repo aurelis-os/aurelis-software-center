@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Uninstall Application
+Comment=Uninstall wizard for applications
+Exec=aurelis-software-uninstall %F
+Icon=aurelis-software
+Categories=System;
+NoDisplay=true
+Terminal=false

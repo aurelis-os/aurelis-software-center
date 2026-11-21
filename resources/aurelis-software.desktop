@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Aurelis Software
+Comment=Software center for Aurelis
+Exec=aurelis-software
+Icon=aurelis-software
+Categories=System;PackageManager;
+Terminal=false

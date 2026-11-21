@@ -12,7 +12,7 @@ import json
 import sys
 
 from PyQt6.QtCore import QCoreApplication, QObject, QTimer, pyqtSlot
-from PyQt6.QtDBus import QDBusConnection, QDBusMessage, QDBus
+from PyQt6.QtDBus import QDBus, QDBusConnection, QDBusMessage
 
 SERVICE = "io.github.appimage_launcher.Manager"
 PATH = "/io/github/appimage_launcher/Manager"
@@ -176,7 +176,7 @@ class Probe(QObject):
             self._signal_timeout()
             return
         # Trigger a Reindex to potentially fire AppsChanged
-        ok, result = call_sync(self.bus, SERVICE, PATH, IFACE, "Reindex")
+        ok, _result = call_sync(self.bus, SERVICE, PATH, IFACE, "Reindex")
         if not ok:
             # Reindex might not return anything on success
             pass
