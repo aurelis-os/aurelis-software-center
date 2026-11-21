@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import platform
 from pathlib import Path
-from typing import override
 
 from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal
 from PyQt6.QtNetwork import QNetworkAccessManager
@@ -20,6 +19,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from typing_extensions import override
 
 from aurelis_software.backends.appimage import AppImageBackend
 from aurelis_software.backends.base import OperationState
