@@ -1,7 +1,0 @@
-{
-  "verdict": "APPROVED",
-  "findings": [
-    "Application icon file missing — PKGBUILD includes commented icon installation line. Create aurelis-software.png (128x128) or .svg, place in resources/, uncomment PKGBUILD line. Documented in deferred.md with rationale (graphic design outside coding scope, system fallback icon functional). Low risk; no blocking concern for v1.0.0."
-  ],
-  "reviewDoc": "/home/user/Projects/aurelis-software-center/.agents/tasks/phase8-release/review.md"
-}

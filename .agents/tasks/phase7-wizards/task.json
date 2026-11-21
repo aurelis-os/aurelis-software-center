@@ -1,7 +1,0 @@
-{
-  "task_id": "task-phase7-wizards",
-  "task_description": "Implement installation and uninstallation wizards with file detection, PyQt6 dialogs, MIME integration, and comprehensive tests",
-  "status": "pending",
-  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004"],
-  "blocked_reason": null
-}

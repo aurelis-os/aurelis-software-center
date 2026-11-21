@@ -1,7 +1,0 @@
-{
-  "task_id": "phase6-pacman",
-  "task_description": "Implement Pacman backend, PacmanIndex service, PacmanModel UI component, and wire into MainWindow following the FlatpakBackend/FlathubIndex patterns",
-  "status": "pending",
-  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004"],
-  "blocked_reason": null
-}
