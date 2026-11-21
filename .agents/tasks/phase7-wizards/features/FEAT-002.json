@@ -1,0 +1,39 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Create InstallWizard and UninstallWizard PyQt6 dialogs. Implements two-page wizards (QStackedWidget) for installation (with 'run without asking' config) and uninstallation (with system package refusal). Both use detect() from FEAT-001 and integrate with existing backends.",
+  "status": "pending",
+  "steps": [
+    "Create src/aurelis_software/wizards/install_wizard.py: InstallWizard(path, backend, config, paths) as QDialog subclass",
+    "InstallWizard routing logic: on __init__, check if path is AppImage in applications_dir; if yes, call QProcess.startDetached('appimage', ['run', managed_name]) and set accept() flag, show no UI, return immediately",
+    "InstallWizard check 'run without asking' list: compute sha256 of path, check if {app_id: basename(path), sha256: computed} is in config['wizard']['run_without_asking']; if yes, execute file via QProcess.startDetached and return",
+    "InstallWizard Page 1 (QWidget in QStackedWidget): QLabel for app icon (from Inspect if AppImage, placeholder otherwise), QLabel for name/version, QLabel for relation wording ('not installed', 'update available', etc.), QPushButton 'Install', QPushButton 'Just run' with QCheckBox 'Don't ask again', QPushButton 'Cancel'. Layout: QVBoxLayout with icon at top, labels, then button row at bottom.",
+    "InstallWizard Page 2 (QWidget in QStackedWidget): QLabel status message, QProgressBar (indeterminate style), QPushButton 'Open' (disabled until done), QPushButton 'Close'. On operation finish, enable Open button and change status label to success/failure message.",
+    "InstallWizard Install action: for AppImages, call backend.install_async(path, {source_action: 'copy', conflict: 'replace', silent: true}, reply_cb, error_cb) and switch to Page 2; for .flatpakref/.flatpak files, run QProcess with ['flatpak', 'install', '--user', path] and monitor finished signal",
+    "InstallWizard 'Just run' action: call QProcess.startDetached with appropriate command (appimage run for AppImage, flatpak run for Flatpak); if 'Don't ask again' checked, append {app_id, sha256} to config['wizard']['run_without_asking'] and save config",
+    "Create src/aurelis_software/wizards/uninstall_wizard.py: UninstallWizard(path_or_desktop_id, backends, config, paths) as QDialog subclass",
+    "UninstallWizard startup: call detect(path_or_desktop_id, ...) to get DetectionResult; if kind == 'pacman-system', show single-page refusal ('Cannot remove system package') with Close button only and disable further pages",
+    "UninstallWizard Page 1 (confirm page for non-system): QLabel icon, QLabel name + type label (e.g. 'AppImage', 'Flatpak', 'User package'), QLabel 'Are you sure you want to remove this application?', QPushButton 'Remove', QPushButton 'Cancel'",
+    "UninstallWizard Page 2 (progress page): same layout as InstallWizard Page 2 (status label, progress bar, Done button)",
+    "UninstallWizard removal actions: if DetectionResult.kind == 'appimage', call backend.remove_async(name, {file_action: 'trash', silent: true}); if 'flatpak', run ['flatpak', 'uninstall', '--user', '-y', app_id]; if 'pacman-user', run ['pkg', 'remove', name] and show '(applies after restart)' note in status label",
+    "UninstallWizard unknown file handling: if DetectionResult.kind == 'unknown', show explanation page with message 'This file is not managed by Aurelis Software Center' and Close button only"
+  ],
+  "acceptance_criteria": [
+    "InstallWizard routes already-installed AppImages directly to appimage run without showing UI",
+    "InstallWizard 'run without asking' list persisted in config and skips UI on subsequent runs",
+    "InstallWizard Page 1 shows name, icon, Install and Just run buttons",
+    "InstallWizard Page 2 shows progress during operation and result with Open/Close buttons",
+    "InstallWizard handles both AppImage files (via backend.install_async) and Flatpak files (via flatpak install command)",
+    "UninstallWizard refuses to remove system packages with single-page dialog",
+    "UninstallWizard confirms removal on Page 1, executes on Page 2 with appropriate backend call or command",
+    "UninstallWizard shows 'applies after restart' note for Pacman packages",
+    "UninstallWizard shows explanation page for unknown files"
+  ],
+  "verification": [
+    "Run pytest tests/wizards/test_install_wizard.py -v and confirm all routing, action, and UI state tests pass",
+    "Run pytest tests/wizards/test_uninstall_wizard.py -v and confirm system refusal, removal actions, and unknown file tests pass",
+    "Run ruff check src/aurelis_software/wizards and confirm no violations"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

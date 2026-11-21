@@ -1,0 +1,28 @@
+{
+  "id": "FEAT-001",
+  "type": "feat",
+  "description": "Create wizards module with file detection logic. Implements detect() function that classifies files as appimage/flatpak/pacman-system/pacman-user/unknown based on file properties, desktop entries, and package ownership. Pure Python with no Qt or subprocess side effects - all I/O injected for testability.",
+  "status": "pending",
+  "steps": [
+    "Create src/aurelis_software/wizards/ directory and src/aurelis_software/wizards/__init__.py",
+    "Create src/aurelis_software/wizards/detect.py with DetectionResult dataclass (kind, id, name) where kind in {appimage, flatpak, pacman-system, pacman-user, unknown}",
+    "Implement detect(path, *, applications_dir, flatpak_export_dirs, core_packages_path, user_packages_path, list_runner) with detection order: (1) AppImage in applications_dir by filename match, (2) desktop entry with X-AppImage-Managed=true, (3) desktop entry in Flatpak export dirs, (4) pacman -Qo returns package in core-packages.json, (5) pacman -Qo returns package in user-packages.json, (6) unknown",
+    "Detection logic: (1) resolve path to absolute; (2) if path.parent == applications_dir and path.suffix == .AppImage, return DetectionResult(appimage, stem, stem); (3) if path.suffix == .desktop, read file, check for X-AppImage-Managed=true key, extract Name and managed filename, return DetectionResult(appimage, managed_name, Name); (4) if path.suffix == .desktop, check if path.parent in flatpak_export_dirs, parse desktop file for app id (e.g. org.kde.kate.desktop -> org.kde.kate), return DetectionResult(flatpak, app_id, Name from desktop file); (5) call list_runner(['pacman', '-Qo', str(path)]), parse stdout for 'is owned by <package>', load core_packages_path JSON, if package in list return DetectionResult(pacman-system, package, package); (6) same as (5) but check user_packages_path, return DetectionResult(pacman-user, package, package); (7) return DetectionResult(unknown, '', '')",
+    "Export detect and DetectionResult from wizards/__init__.py",
+    "Create tests/wizards/ directory and tests/wizards/__init__.py",
+    "Create tests/wizards/test_detect.py with table-driven tests covering all six branches: (1) AppImage in applications_dir, (2) desktop entry with X-AppImage-Managed, (3) desktop entry in Flatpak exports, (4) pacman -Qo returns core package, (5) pacman -Qo returns user package, (6) unknown file. Use tmp_path fixture for file setup and fake runner for list_runner that returns canned pacman -Qo output."
+  ],
+  "acceptance_criteria": [
+    "detect() returns correct DetectionResult for all six file types",
+    "All file I/O goes through injected paths (no hardcoded directories)",
+    "All subprocess calls go through injected list_runner (no subprocess.run in detect.py)",
+    "No Qt imports in detect.py or __init__.py",
+    "tests/wizards/test_detect.py has at least 6 test cases covering each branch with assertions on kind, id, and name fields"
+  ],
+  "verification": [
+    "Run pytest tests/wizards/test_detect.py -v and confirm all tests pass",
+    "Run ruff check src/aurelis_software/wizards tests/wizards and confirm no violations"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

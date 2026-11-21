@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+NoDisplay=true
+Name=Aurelis Software Install Wizard
+Exec=aurelis-software wizard install %f
+MimeType=application/vnd.appimage;application/vnd.flatpak.ref;application/vnd.flatpak;
+Icon=system-software-install

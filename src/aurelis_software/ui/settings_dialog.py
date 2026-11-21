@@ -73,12 +73,68 @@ class SettingsDialog(QDialog):
         ui_layout.addWidget(self.notify_updates)
         layout.addWidget(ui_box)
 
+        # Wizards section
+        wizards_box = QGroupBox(self.tr("Wizards"))
+        wizards_layout = QVBoxLayout(wizards_box)
+        wizards_layout.addWidget(QLabel(self.tr("Run without asking:")))
+
+        from PyQt6.QtWidgets import QListWidget
+
+        self.run_without_asking_list = QListWidget()
+        self._populate_run_without_asking()
+        wizards_layout.addWidget(self.run_without_asking_list)
+        layout.addWidget(wizards_box)
+
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
         )
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _populate_run_without_asking(self) -> None:
+        """Populate the run-without-asking list widget."""
+        self.run_without_asking_list.clear()
+        run_list = self.config.get("wizard.run_without_asking", [])
+        
+        for entry in run_list:
+            if isinstance(entry, dict):
+                app_id = entry.get("app_id", "")
+                item_widget = self._create_list_item(app_id, entry)
+                from PyQt6.QtWidgets import QListWidgetItem
+                list_item = QListWidgetItem(self.run_without_asking_list)
+                list_item.setSizeHint(item_widget.sizeHint())
+                self.run_without_asking_list.addItem(list_item)
+                self.run_without_asking_list.setItemWidget(list_item, item_widget)
+
+    def _create_list_item(self, app_id: str, entry: dict):
+        """Create a list item widget with Remove button."""
+        from PyQt6.QtWidgets import QWidget
+
+        widget = QWidget()
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(4, 4, 4, 4)
+        
+        label = QLabel(app_id)
+        layout.addWidget(label)
+        layout.addStretch()
+        
+        remove_btn = QPushButton(self.tr("Remove"))
+        remove_btn.clicked.connect(lambda: self._remove_entry(entry))
+        layout.addWidget(remove_btn)
+        
+        return widget
+
+    def _remove_entry(self, entry: dict) -> None:
+        """Remove an entry from the run-without-asking list."""
+        data = dict(self.config.data)
+        run_list = data.get("wizard", {}).get("run_without_asking", [])
+        if entry in run_list:
+            run_list.remove(entry)
+            from aurelis_software.core.config import Config
+            self.config = Config(data)
+            save(self.paths, self.config)
+            self._populate_run_without_asking()
 
     def _save(self) -> None:
         data = dict(self.config.data)

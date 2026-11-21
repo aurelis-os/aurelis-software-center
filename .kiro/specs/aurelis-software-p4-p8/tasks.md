@@ -154,20 +154,20 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - Run `./check`; paste real output
     - **Stop here for owner review before starting Phase 6**
 
-- [ ] 3. Phase 6 — Pacman section
+- [x] 3. Phase 6 — Pacman section
 
-  - [ ] 3.1 Create `core/pacman_parser.py`
+  - [x] 3.1 Create `core/pacman_parser.py`
     - `parse_si_output(text) -> list[dict]`: parses multi-line `pacman -Si` output; handles multi-value fields (`Depends On`, `Required By`, `Groups`, etc.) as lists
     - `parse_qi_output(text) -> list[dict]`: parses `pacman -Qi` output for installed packages
     - `parse_qq_output(text) -> list[str]`: parses `pacman -Qq` output (one name per line)
     - Pure Python, no Qt, no subprocess
     - _Requirements: R13.2_
 
-  - [ ]* 3.2 Write property test for pacman parser (Property 5)
+  - [x]* 3.2 Write property test for pacman parser (Property 5)
     - **Property 5: Pacman parser round-trip** — for any `pacman -Si` output, `parse_si_output` produces dicts whose `name` and `version` fields match the "Name" and "Version" lines exactly
     - **Validates: R13.1, R13.2**
 
-  - [ ] 3.3 Create `services/pacman_index.py`
+  - [x] 3.3 Create `services/pacman_index.py`
     - `PacmanIndex(db_path, sync_dir)` backed by `sqlite3`
     - SQLite schema: `packages` table (name, version, description, repo, groups JSON, installed_size, download_size, url, license, depends JSON, raw JSON) + `packages_fts` FTS5 on name + description
     - `needs_rebuild()`: compares max mtime of `sync_dir/*.db` with stored value
@@ -176,12 +176,12 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - `get(name)`: single record or `None`
     - _Requirements: R13.1, R13.2, R13.3_
 
-  - [ ]* 3.4 Write tests for `PacmanIndex` (`tests/services/test_pacman_index.py`)
+  - [x]* 3.4 Write tests for `PacmanIndex` (`tests/services/test_pacman_index.py`)
     - Use captured fixture `tests/fixtures/pacman/si_output.txt`
     - Test: needs_rebuild when sync db is newer; rebuild populates FTS; search returns correct results; rebuild is idempotent; worker thread does not block main thread
     - _Requirements: R13.1, R13.3_
 
-  - [ ] 3.5 Create `backends/pacman.py`
+  - [x] 3.5 Create `backends/pacman.py`
     - `PacmanBackend(runner, core_packages_path, user_packages_path)` implementing `Backend` for `Source.PACMAN`
     - `list_installed()`: runs `pacman -Qq` then `pacman -Qi <name>` for details; classifies as locked/user/dependency using the two JSON files
     - `install(app)`: runs `pkg add <name>`; on success calls `pkg queue` to refresh pending set; emits events
@@ -190,12 +190,12 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - `available` property: checks `pkg` on PATH
     - _Requirements: R15.1–R15.6_
 
-  - [ ]* 3.6 Write tests for `PacmanBackend` (`tests/backends/test_pacman.py`)
+  - [x]* 3.6 Write tests for `PacmanBackend` (`tests/backends/test_pacman.py`)
     - Use captured fixture outputs in `tests/fixtures/pacman/`
     - Test: `list_installed` classifies packages correctly; `install` calls `pkg add` and refreshes queue; `remove` warns on reverse deps; `available=False` when pkg missing; pending state persisted via `pkg queue` not GUI file
     - _Requirements: R15.1–R15.6, R18.1_
 
-  - [ ] 3.7 Wire Pacman into sidebar, Installed page, Updates page, and banners
+  - [x] 3.7 Wire Pacman into sidebar, Installed page, Updates page, and banners
     - Add Pacman sidebar section with category sub-list (using `PacmanIndex`)
     - Installed page: aggregate Pacman rows; show lock icon for locked packages; "Show dependencies" toggle; "Pending restart" tag
     - Updates page: Pacman update rows with "(applies after restart)" note
@@ -203,20 +203,20 @@ This plan completes the Aurelis Software Center PyQt6 application across five ph
     - On startup: query `pkg queue` to restore pending state; show banner if non-empty
     - _Requirements: R14.1–R14.3, R16.1–R16.3, R17.1_
 
-  - [ ] 3.8 Add pacman-specific UI: reverse-dependency warning and package detail
+  - [x] 3.8 Add pacman-specific UI: reverse-dependency warning and package detail
     - When `PacmanBackend.remove` signals a dependency conflict, show a `QMessageBox` warning listing the dependent packages before proceeding
     - Lazy detail via `PacmanIndex.get(name)` on detail page click
     - Paginated `PacmanModel` mirroring `FlathubModel` backed by `PacmanIndex.search`
     - _Requirements: R15.4, R14.3_
 
-  - [ ]* 3.9 Write failure tests for Pacman (`tests/backends/test_pacman.py` extension)
+  - [x]* 3.9 Write failure tests for Pacman (`tests/backends/test_pacman.py` extension)
     - Package not found (exit 1): correct error message, no state change
     - Locked package removal: Remove action disabled in UI; direct `pkg remove` call rejected
     - `pkg` missing: section degrades with banner
     - Reverse-dep warning shown and dismissed correctly
     - _Requirements: R18.1_
 
-  - [ ] 3.10 Phase 6 checkpoint — run `./check` and confirm all tests pass
+  - [x] 3.10 Phase 6 checkpoint — run `./check` and confirm all tests pass
     - Run `./check`; paste real output
     - **Stop here for owner review before starting Phase 7**
 
