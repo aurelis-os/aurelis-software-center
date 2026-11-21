@@ -42,4 +42,4 @@ python -m pip install -e ".[dev]"
 
 ## License
 
-Proprietary — Aurelis Software.
+GPL-3.0 — See [LICENSE](LICENSE) for details.
