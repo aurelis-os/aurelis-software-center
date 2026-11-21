@@ -18,7 +18,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
-          sudo apt-get install -y libegl1 libxkbcommon0 libxcb-cursor0 libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 libxcb-randr0 libxcb-image0 libxcb-keysyms1 libxcb-icccm4 libxcb-glx0 python3-pyqt6 python3-pyqt6.qtdbus
+          sudo apt-get install -y libegl1 libxkbcommon0 libxcb-cursor0 libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 libxcb-randr0 libxcb-image0 libxcb-keysyms1 libxcb-icccm4 libxcb-glx0
         env:
           QT_QPA_PLATFORM: offscreen
       - name: Run ./check
